@@ -239,14 +239,7 @@ html[data-lateral="fechada"] .lateral .sair { margin: 0; }
 html[data-lateral="fechada"] .lateral .tema { justify-content: center; padding: 2px 0; }
 html[data-lateral="fechada"] .lateral .tema .tema-botao { margin: 0; }
 
-@media (max-width: 760px) {
-  :root { --lateral: 72px; }
-  .so-aberta { display: none; }
-  .lateral-nav a { justify-content: center; padding: 11px 0; }
-  .alternar { display: none; }
-  .lateral .eu { justify-content: center; margin: 10px 8px 0; padding: 8px; }
-  .lateral .tema { justify-content: center; padding: 2px 0; }
-}
+
 
 /* ================================================================ conteúdo */
 main {
@@ -527,7 +520,11 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
 .entrada-tela {
   display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh;
 }
-@media (max-width: 920px) { .entrada-tela { grid-template-columns: 1fr; min-height: 0; } }
+/* No celular a marca vira uma faixa curta no topo: o formulário precisa
+   caber na primeira tela, sem rolagem. O texto de apoio e a lista saem. */
+@media (max-width: 920px) {
+  .entrada-tela { grid-template-columns: 1fr; min-height: 100vh; }
+}
 
 /* lado esquerdo: a marca */
 .entrada-arte {
@@ -538,7 +535,7 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
     linear-gradient(160deg, #16203a 0%, #0c1120 100%);
   padding: 56px 52px; display: flex; flex-direction: column;
 }
-@media (max-width: 920px) { .entrada-arte { padding: 40px 28px; } }
+
 .entrada-arte .marca {
   display: flex; align-items: center; gap: 12px;
   font-weight: 700; font-size: 16px; letter-spacing: -.2px;
@@ -550,7 +547,7 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
   font-size: 34px; line-height: 1.2; letter-spacing: -1px; margin: 0 0 16px;
   color: #fff; text-transform: none; font-weight: 700;
 }
-@media (max-width: 920px) { .entrada-arte .chamada h2 { font-size: 26px; } }
+
 .entrada-arte .chamada p { color: #aab7cd; font-size: 15px; margin: 0 0 28px; }
 .entrada-arte ul { list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 14px; }
@@ -570,7 +567,7 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
   display: flex; flex-direction: column; justify-content: center;
   padding: 56px 52px; background: var(--plano);
 }
-@media (max-width: 920px) { .entrada-form { padding: 40px 24px; } }
+
 .entrada-form .caixa { width: 100%; max-width: 380px; margin: 0 auto; }
 .entrada-form h1 { font-size: 26px; margin: 0 0 6px; }
 .entrada-form .campo { text-transform: none; letter-spacing: 0; font-size: 13px;
@@ -586,3 +583,132 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
 .tema-botao .icone-lua { display: none; }
 .tema-botao[data-estado="escuro"] .icone-sol { display: none; }
 .tema-botao[data-estado="escuro"] .icone-lua { display: block; }
+
+/* bloco do usuário na lateral leva para Minha conta */
+.lateral .eu-link {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  text-decoration: none; color: inherit; flex: 1;
+}
+.lateral .eu:has(.eu-link:hover) { background: rgba(255, 255, 255, .10); }
+.lateral .eu-link:hover .eu-dados b { text-decoration: underline; }
+
+
+/* =========================================================== celular ====
+   Abaixo de 900px o menu deixa de ocupar coluna e vira gaveta sobreposta,
+   com uma barra fixa no topo. Numa tela de 375px, 72px de rail fixo são
+   quase 20% da largura - não dá para pagar isso em toda página.
+   ======================================================================= */
+.barra-mobile { display: none; }
+.fundo-menu { display: none; }
+
+@media (max-width: 900px) {
+  .barra-mobile {
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; top: 0; z-index: 25;
+    background: var(--lateral-fundo); color: #fff;
+    padding: 10px 14px; min-height: 56px;
+  }
+  .barra-mobile .marca {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 15px;
+  }
+  .barra-mobile .tema-botao { margin-left: auto; }
+  .menu-mobile {
+    background: transparent; border: 0; color: #fff; cursor: pointer;
+    padding: 7px; border-radius: 8px; line-height: 0;
+  }
+  .menu-mobile:active { background: var(--lateral-ativo); }
+
+  aside.lateral {
+    width: 272px; transform: translateX(-100%); z-index: 30;
+    transition: transform var(--transicao);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, .35);
+  }
+  html[data-menu="aberto"] aside.lateral { transform: none; }
+  html[data-menu="aberto"] .fundo-menu {
+    display: block; position: fixed; inset: 0; z-index: 28;
+    background: rgba(5, 8, 14, .55);
+  }
+  /* na gaveta o menu está sempre por extenso, mesmo recolhido no desktop */
+  html[data-lateral="fechada"] .so-aberta { display: inline; }
+  html[data-lateral="fechada"] .lateral-topo { padding: 18px 16px 14px; flex-direction: row; }
+  html[data-lateral="fechada"] .lateral-nav a { justify-content: flex-start; padding: 10px 12px; }
+  html[data-lateral="fechada"] .lateral .eu { justify-content: flex-start; margin: 10px 12px 0; padding: 10px 12px; }
+  html[data-lateral="fechada"] .lateral .tema { justify-content: flex-start; padding: 2px 12px; }
+  .alternar { display: none; }
+
+  main { margin-left: 0; padding: 18px 14px 10px; max-width: none; }
+
+  h1 { font-size: 21px; }
+  h2 { margin: 24px 0 10px; }
+  .cartao { padding: 15px 15px; border-radius: 12px; }
+  .cartao-cabeca { margin-bottom: 14px; }
+  .faixa { padding: 12px 14px; }
+  .grade, .painel-2, .kpis { gap: 12px; }
+
+  /* formulários: um campo por linha, controle cheio */
+  form.filtros { flex-direction: column; align-items: stretch; gap: 12px; }
+  form.filtros label.campo { width: 100%; }
+  form.filtros input, form.filtros select { width: 100%; min-width: 0; }
+  form.filtros .botao { width: 100%; }
+  .acoes { flex-direction: column; align-items: stretch; }
+  .acoes .botao { width: 100%; }
+  .acoes form { width: 100%; }
+  .acoes form .botao { width: 100%; }
+
+  .hero { padding: 18px; }
+  .hero .figura { font-size: 33px; letter-spacing: -1.1px; }
+  .tile .valor { font-size: 20px; }
+
+  .grafico { height: 230px; }
+
+  dl.dados { grid-template-columns: 1fr; }
+  dl.dados dt { padding: 10px 0 2px; border-bottom: 0; }
+  dl.dados dd { padding: 0 0 10px; }
+
+  table.compacta td, table.compacta th, th, td { padding: 8px 9px; font-size: 13px; }
+}
+
+/* ---- tabelas que viram cartões no celular ---------------------------- */
+/* Tabela de pedido tem onze colunas: rolar na horizontal num celular é
+   ruim de usar. Cada linha vira um bloco rotulado.                        */
+@media (max-width: 760px) {
+  table.empilha thead { display: none; }
+  table.empilha, table.empilha tbody, table.empilha tr, table.empilha td { display: block; }
+  table.empilha tr {
+    border: 1px solid var(--borda); border-radius: var(--raio-p);
+    padding: 10px 12px; margin-bottom: 10px; background: var(--papel);
+  }
+  table.empilha tr:hover { background: var(--papel); }
+  table.empilha td {
+    border: 0; padding: 5px 0; display: flex; gap: 12px;
+    align-items: baseline; justify-content: space-between; text-align: right;
+  }
+  table.empilha td::before {
+    content: attr(data-rotulo); flex: none; text-align: left;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--tinta-3); font-weight: 700; padding-top: 2px;
+  }
+  table.empilha td:empty { display: none; }
+  table.empilha .rolagem { overflow: visible; }
+}
+
+/* ---- entrada no celular ---------------------------------------------- */
+/* Precisa vir depois das regras base de .entrada-arte: mesma especificidade,
+   quem está por último vence. No celular a marca vira faixa curta e o
+   formulário aparece sem rolagem.                                         */
+@media (max-width: 920px) {
+  .entrada-arte { padding: 20px 20px 18px; }
+  .entrada-arte .chamada { margin: 0; max-width: none; }
+  .entrada-arte .chamada h2 {
+    font-size: 19px; line-height: 1.3; margin: 12px 0 0; letter-spacing: -.3px;
+  }
+  .entrada-arte .chamada p { display: none; }
+  .entrada-arte ul { display: none; }
+  .entrada-arte .assinatura { display: none; }
+
+  .entrada-form { padding: 24px 20px 36px; justify-content: flex-start; }
+  .entrada-form .caixa { max-width: none; }
+  .entrada-form h1 { font-size: 23px; }
+  .entrada-topo { margin-bottom: 10px; }
+}

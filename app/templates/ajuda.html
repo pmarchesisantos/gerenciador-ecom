@@ -84,6 +84,38 @@
   </div>
 </details>
 
+{# ================================================================= 0.7 #}
+<details class="canal">
+  <summary><span>0.7. E-mail de recuperação de senha</span><span class="selo amarelo">exige SMTP próprio</span></summary>
+  <div class="corpo">
+    <p class="sub" style="margin-top:0">
+      O botão <b>Esqueci minha senha</b> manda o Supabase enviar um link. Para
+      funcionar de verdade faltam duas configurações no projeto.
+    </p>
+    <ol class="passos">
+      <li>Em <b>Authentication &rarr; URL Configuration</b>, coloque em
+          <b>Site URL</b> o endereço do app e adicione em <b>Redirect URLs</b>:
+          <br><code>{{ redirects.mercadolivre.rsplit('/', 2)[0] }}/nova-senha</code>
+          <br>Sem isso o link do e-mail devolve a pessoa para o lugar errado e o
+          token não chega na tela.</li>
+      <li>Em <b>Project Settings &rarr; Authentication &rarr; SMTP Settings</b>,
+          configure um servidor de e-mail próprio (Resend, SendGrid, Amazon SES,
+          ou o SMTP do seu provedor).</li>
+    </ol>
+    <div class="faixa atencao" style="margin:14px 0 0">
+      <strong>O envio nativo do Supabase não serve para produção</strong>
+      Ele existe para testes e tem limite baixo de mensagens por hora. Com ele,
+      o primeiro usuário que pedir recuperação pode funcionar e o segundo tomar
+      erro de limite. Enquanto o SMTP próprio não estiver configurado, o caminho
+      confiável continua sendo quem é dono trocar a senha em <a href="/usuarios">Usuários</a>.
+    </div>
+    <p class="sub" style="margin:12px 0 0">
+      A troca de senha de quem já está logado (em <b>Minha conta</b>) não
+      depende de e-mail nenhum — funciona desde já.
+    </p>
+  </div>
+</details>
+
 {# =================================================================== 1 #}
 <details class="canal" {{ 'open' if aberto == 'mercadolivre' or not aberto }}>
   <summary><span>1. Mercado Livre</span><span class="selo verde">chaves na hora</span></summary>

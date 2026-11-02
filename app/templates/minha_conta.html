@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block titulo %}Minha conta - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Minha conta</h1>
+<p class="sub">Seus dados de acesso e o que você enxerga no sistema.</p>
+
+<div class="painel-2">
+
+  {# ------------------------------------------------------------- perfil #}
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Quem é você aqui</h3>
+      <p class="sub">O e-mail é o seu login e não pode ser alterado por aqui.</p>
+    </div>
+
+    <dl class="dados" style="margin-bottom:18px">
+      <dt>E-mail</dt><dd class="cru">{{ usuario.email }}</dd>
+      <dt>Papel</dt>
+      <dd>
+        <span class="selo {{ 'azul' if usuario.papel == 'dono' else 'cinza' }}">
+          {{ rotulo_papel[usuario.papel] }}
+        </span>
+      </dd>
+      {% if perfil %}
+        <dt>Acesso criado em</dt><dd>{{ perfil.criado_em|data }}</dd>
+        <dt>Último acesso</dt><dd>{{ perfil.ultimo_acesso|data }}</dd>
+      {% endif %}
+    </dl>
+
+    <form method="post" action="/minha-conta/nome">
+      <label class="campo" style="margin-bottom:12px">
+        Seu nome
+        <input type="text" name="nome" required style="min-width:100%"
+               value="{{ perfil.nome if perfil else usuario.nome }}">
+        <span class="sub" style="margin:0; font-weight:400; text-transform:none">
+          É o que aparece no menu e no histórico das lojas.
+        </span>
+      </label>
+      <button class="botao neutro pequeno" type="submit">Salvar nome</button>
+    </form>
+  </div>
+
+  {# -------------------------------------------------------------- senha #}
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Trocar senha</h3>
+      <p class="sub">
+        Pedimos a senha atual de propósito: é o que impede alguém que pegue seu
+        computador destravado de trancar você do lado de fora.
+      </p>
+    </div>
+
+    <form method="post" action="/minha-conta/senha">
+      <label class="campo" style="margin-bottom:12px">
+        Senha atual
+        <input type="password" name="senha_atual" required style="min-width:100%"
+               autocomplete="current-password">
+      </label>
+      <label class="campo" style="margin-bottom:12px">
+        Nova senha
+        <input type="password" name="nova" required minlength="8" style="min-width:100%"
+               autocomplete="new-password">
+      </label>
+      <label class="campo" style="margin-bottom:16px">
+        Repita a nova senha
+        <input type="password" name="confirma" required minlength="8" style="min-width:100%"
+               autocomplete="new-password">
+        <span class="sub" style="margin:0; font-weight:400; text-transform:none">
+          Mínimo de 8 caracteres.
+        </span>
+      </label>
+      <button class="botao" type="submit">Trocar senha</button>
+    </form>
+
+    <p class="sub" style="margin:16px 0 0">
+      Esqueceu a senha atual? Saia e use
+      <a href="/recuperar">Esqueci minha senha</a> na tela de entrada.
+    </p>
+  </div>
+</div>
+
+{# --------------------------------------------------------------- lojas #}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Lojas que você enxerga</h3>
+    <p class="sub">
+      {% if ve_todas %}
+        Como dono, você enxerga todas as lojas cadastradas.
+      {% else %}
+        Quem é dono do sistema decide quais lojas entram no seu painel.
+      {% endif %}
+    </p>
+  </div>
+
+  {% if lojas %}
+    <div class="rolagem">
+      <table class="compacta">
+        <thead><tr><th>Conta</th><th>Canal</th><th>Loja</th></tr></thead>
+        <tbody>
+        {% for c in lojas %}
+          <tr>
+            <td><a href="/contas/{{ c.id }}">{{ c.apelido }}</a></td>
+            <td>{{ canais_rotulo.get(c.canal, c.canal) }}</td>
+            <td>{{ c.loja_nome or '-' }} <span class="cru">{{ c.loja_id or '' }}</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="sub" style="margin:0">
+      Nenhuma loja atribuída ao seu acesso ainda.
+      {% if not ve_todas %}Peça a quem é dono para liberar.{% endif %}
+    </p>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -26,7 +26,7 @@
 <div class="cartao">
   <h3>Pessoas cadastradas</h3>
   <div class="rolagem">
-    <table>
+    <table class="empilha">
       <thead><tr>
         <th>Pessoa</th><th>Papel</th><th>Lojas que enxerga</th><th>Situação</th>
         <th>Último acesso</th><th>Ações</th>
@@ -34,12 +34,12 @@
       <tbody>
       {% for p in lista %}
         <tr>
-          <td>
+          <td data-rotulo="Pessoa">
             <b>{{ p.nome or p.email.split('@')[0] }}</b>
             {% if p.id == usuario.id %}<span class="selo azul">você</span>{% endif %}
             <br><span class="cru">{{ p.email }}</span>
           </td>
-          <td>
+          <td data-rotulo="Papel">
             <form method="post" action="/usuarios/{{ p.id }}/papel" class="acoes">
               <select name="papel" style="min-width:120px">
                 {% for papel in papeis %}
@@ -51,7 +51,7 @@
               <button class="botao neutro pequeno" type="submit">Salvar</button>
             </form>
           </td>
-          <td>
+          <td data-rotulo="Lojas">
             {% if p.papel == 'dono' %}
               <span class="selo azul">todas</span>
             {% else %}
@@ -69,12 +69,12 @@
               {% endif %}
             {% endif %}
           </td>
-          <td>
+          <td data-rotulo="Situação">
             <span class="selo {{ 'verde' if p.ativo else 'cinza' }}">
               {{ 'ativo' if p.ativo else 'desativado' }}
             </span>
           </td>
-          <td>{{ p.ultimo_acesso|data }}</td>
+          <td data-rotulo="Último acesso">{{ p.ultimo_acesso|data }}</td>
           <td>
             <div class="acoes">
               <form method="post" action="/usuarios/{{ p.id }}/ativo" style="display:inline">

@@ -124,6 +124,14 @@ async def _conferir_ultimo_dono(usuario_id: str) -> None:
         )
 
 
+async def alterar_nome(usuario_id: str, nome: str) -> dict:
+    nome = nome.strip()
+    if not nome:
+        raise auth.ErroAuth("O nome não pode ficar em branco.")
+    await db.atualizar("perfis", {"id": f"eq.{usuario_id}"}, {"nome": nome})
+    return await buscar(usuario_id)
+
+
 async def marcar_acesso(usuario_id: str) -> None:
     try:
         await db.atualizar(

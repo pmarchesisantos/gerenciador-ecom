@@ -20,7 +20,7 @@ import httpx
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 
-from app.config import SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL
+from app.config import BASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL
 
 # ---------------------------------------------------------------------------
 # papeis
@@ -141,6 +141,62 @@ async def apagar_usuario(usuario_id: str) -> None:
         )
     if r.status_code >= 400 and r.status_code != 404:
         raise ErroAuth(f"Não consegui remover o usuário ({r.status_code}): {r.text[:200]}")
+
+
+# ---------------------------------------------------------------------------
+# recuperacao de senha
+# ---------------------------------------------------------------------------
+def url_nova_senha() -> str:
+    """Para onde o link do e-mail devolve a pessoa.
+
+    Precisa estar cadastrada no Supabase em Authentication > URL
+    Configuration > Redirect URLs, senao o link volta para a Site URL.
+    """
+    return f"{BASE_URL}/nova-senha"
+
+
+async def pedir_recuperacao(email: str) -> None:
+    """Dispara o e-mail de redefinicao.
+
+    O Supabase responde 200 mesmo para e-mail que nao existe, de proposito:
+    assim a tela nao vira um jeito de descobrir quem tem conta aqui. Mantemos
+    esse comportamento na nossa tela tambem.
+    """
+    if not SUPABASE_ANON_KEY:
+        raise ErroAuth(
+            "SUPABASE_ANON_KEY não configurada: sem ela não dá para enviar o e-mail."
+        )
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.post(
+            _url("/recover"),
+            params={"redirect_to": url_nova_senha()},
+            headers={"apikey": SUPABASE_ANON_KEY, "Content-Type": "application/json"},
+            json={"email": email.strip().lower()},
+        )
+    if r.status_code == 429:
+        raise ErroAuth(
+            "Muitos pedidos de redefinição em pouco tempo. Espere alguns minutos "
+            "e tente de novo."
+        )
+    if r.status_code >= 400:
+        raise ErroAuth(f"Não consegui enviar o e-mail ({r.status_code}): {r.text[:200]}")
+
+
+async def trocar_propria_senha(email: str, senha_atual: str, nova: str) -> None:
+    """Troca a senha de quem esta logado, conferindo a senha atual antes.
+
+    Pedir a senha atual e o que impede alguem com a sessao aberta (um
+    computador destravado) de trancar o dono do lado de fora.
+    """
+    if len(nova) < 8:
+        raise ErroAuth("A nova senha precisa ter ao menos 8 caracteres.")
+    if nova == senha_atual:
+        raise ErroAuth("A nova senha é igual à atual.")
+    try:
+        usuario = await entrar(email, senha_atual)
+    except ErroAuth:
+        raise ErroAuth("A senha atual está incorreta.")
+    await trocar_senha(usuario["id"], nova)
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,8 @@ from app import auth, db
 from app.canais import CANAIS, ErroCanal
 from app.config import (
     CHAVE_SESSAO,
+    SUPABASE_ANON_KEY,
+    SUPABASE_URL,
     FUSO,
     NOME_FUSO,
     PRODUCAO,
@@ -82,7 +84,7 @@ def _versao_estilo() -> str:
 
 ESTILO_VERSAO = _versao_estilo()
 
-ROTAS_ABERTAS = {"/entrar", "/sair", "/primeiro-acesso"}
+ROTAS_ABERTAS = {"/entrar", "/sair", "/primeiro-acesso", "/recuperar", "/nova-senha"}
 
 
 async def _exigir_login(request: Request, seguir):
@@ -434,6 +436,108 @@ async def primeiro_acesso(
     await db.registrar_evento("acesso", "primeiro dono criado", usuario=perfil)
     return _volta("/contas", aviso="Acesso criado. Agora cadastre a primeira loja.")
 
+
+
+# ===========================================================================
+# recuperacao de senha
+# ===========================================================================
+@app.get("/recuperar", response_class=HTMLResponse)
+async def recuperar_tela(request: Request):
+    if auth.usuario_da_sessao(request):
+        return RedirectResponse("/minha-conta", status_code=303)
+    return templates.TemplateResponse(
+        "recuperar.html", _base(request, _periodo(None, None), enviado=False)
+    )
+
+
+@app.post("/recuperar", response_class=HTMLResponse)
+async def recuperar_envio(request: Request, email: str = Form(...)):
+    erro = ""
+    try:
+        await auth.pedir_recuperacao(email)
+    except auth.ErroAuth as e:
+        erro = str(e)
+    # A tela mostra a mesma mensagem com ou sem conta cadastrada: senao ela
+    # viraria um jeito de descobrir quem tem acesso ao sistema.
+    return templates.TemplateResponse(
+        "recuperar.html",
+        _base(request, _periodo(None, None), enviado=not erro, erro=erro, email=email),
+    )
+
+
+@app.get("/nova-senha", response_class=HTMLResponse)
+async def nova_senha(request: Request):
+    # O token vem no fragmento da URL (#access_token=...), que o navegador
+    # nunca manda para o servidor. Por isso esta tela resolve tudo no cliente,
+    # falando direto com o Supabase.
+    return templates.TemplateResponse(
+        "nova_senha.html",
+        _base(
+            request,
+            _periodo(None, None),
+            supabase_url=SUPABASE_URL,
+            supabase_anon=SUPABASE_ANON_KEY,
+        ),
+    )
+
+
+# ===========================================================================
+# minha conta
+# ===========================================================================
+@app.get("/minha-conta", response_class=HTMLResponse)
+async def minha_conta(request: Request):
+    usuario = auth.usuario_da_sessao(request)
+    erro_infra, perfil, lojas = "", None, []
+    try:
+        perfil = await servico_usuarios.buscar(usuario["id"])
+        minhas = await servico_contas.ids_visiveis(usuario)
+        todas = await servico_contas.listar()
+        lojas = [c for c in todas if minhas is None or c["id"] in minhas]
+    except db.ErroBanco as e:
+        erro_infra = str(e)
+
+    return templates.TemplateResponse(
+        "minha_conta.html",
+        _base(
+            request,
+            _periodo(None, None),
+            perfil=perfil,
+            lojas=lojas,
+            ve_todas=auth.pode(usuario, auth.DONO),
+            erro_infra=erro_infra,
+        ),
+    )
+
+
+@app.post("/minha-conta/nome")
+async def minha_conta_nome(request: Request, nome: str = Form(...)):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        perfil = await servico_usuarios.alterar_nome(usuario["id"], nome)
+    except (auth.ErroAuth, db.ErroBanco) as e:
+        return _volta("/minha-conta", erro=str(e))
+    auth.abrir_sessao(request, perfil)  # o nome aparece no menu, atualiza já
+    return _volta("/minha-conta", aviso="Nome atualizado.")
+
+
+@app.post("/minha-conta/senha")
+async def minha_conta_senha(
+    request: Request,
+    senha_atual: str = Form(...),
+    nova: str = Form(...),
+    confirma: str = Form(...),
+):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        if nova != confirma:
+            raise auth.ErroAuth("A confirmação não bate com a nova senha.")
+        await auth.trocar_propria_senha(usuario["email"], senha_atual, nova)
+    except auth.ErroAuth as e:
+        return _volta("/minha-conta", erro=str(e))
+    await db.registrar_evento(
+        "acesso", f"{usuario['email']} trocou a própria senha", usuario=usuario
+    )
+    return _volta("/minha-conta", aviso="Senha trocada.")
 
 # ===========================================================================
 # painel

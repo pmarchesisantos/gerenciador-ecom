@@ -54,6 +54,22 @@
 
 {% if usuario %}
 {% set rota = request.url.path %}
+
+<div class="barra-mobile">
+  <button class="menu-mobile" type="button" id="abrir-menu"
+          aria-label="Abrir o menu">{{ icone('menu') }}</button>
+  <span class="marca">
+    <span class="marca-sigla">SE</span>
+    <span>Sistema-Ecom</span>
+  </span>
+  <button class="tema-botao" type="button" data-tema-botao
+          aria-label="Alternar entre tema claro e escuro">
+    <span class="icone-sol">{{ icone('sol') }}</span>
+    <span class="icone-lua">{{ icone('lua') }}</span>
+  </button>
+</div>
+<div class="fundo-menu" id="fundo-menu" aria-hidden="true"></div>
+
 <aside class="lateral">
   <div class="lateral-topo">
     <span class="marca">
@@ -101,13 +117,15 @@
       </button>
     </div>
     <div class="eu">
-      <span class="avatar">{{ usuario.nome[0]|upper }}</span>
-      <span class="eu-dados so-aberta">
-        <b>{{ usuario.nome }}</b>
-        <span class="selo {{ 'azul' if usuario.papel == 'dono' else 'cinza' }}">
-          {{ rotulo_papel[usuario.papel] }}
+      <a href="/minha-conta" class="eu-link" title="Minha conta">
+        <span class="avatar">{{ usuario.nome[0]|upper }}</span>
+        <span class="eu-dados so-aberta">
+          <b>{{ usuario.nome }}</b>
+          <span class="selo {{ 'azul' if usuario.papel == 'dono' else 'cinza' }}">
+            {{ rotulo_papel[usuario.papel] }}
+          </span>
         </span>
-      </span>
+      </a>
       <a href="/sair" class="sair" title="Sair">{{ icone('sair') }}</a>
     </div>
   </div>
@@ -168,6 +186,27 @@
         try { localStorage.setItem('lateral', fechada ? 'aberta' : 'fechada'); } catch (e) {}
       });
     }
+
+    // ---- gaveta do celular ----
+    // No celular o menu vira sobreposição: a tela é estreita demais para
+    // perder 72px com uma barra fixa.
+    var abrir = document.getElementById('abrir-menu');
+    var fundo = document.getElementById('fundo-menu');
+    function fecharGaveta() { delete raiz.dataset.menu; }
+    if (abrir) {
+      abrir.addEventListener('click', function () {
+        if (raiz.dataset.menu === 'aberto') { fecharGaveta(); }
+        else { raiz.dataset.menu = 'aberto'; }
+      });
+    }
+    if (fundo) fundo.addEventListener('click', fecharGaveta);
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') fecharGaveta();
+    });
+    // navegar fecha a gaveta
+    document.querySelectorAll('.lateral-nav a, .lateral .eu-link').forEach(function (a) {
+      a.addEventListener('click', fecharGaveta);
+    });
 
     // ---- tema ----
     // Sem escolha guardada, segue o sistema. Assim que a pessoa escolhe,

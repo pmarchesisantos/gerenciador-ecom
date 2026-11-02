@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}Recuperar senha - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<div class="entrada-tela">
+
+  <section class="entrada-arte">
+    <div class="marca">
+      <span class="marca-sigla">SE</span>
+      <span>Sistema-Ecom</span>
+    </div>
+    <div class="chamada">
+      <h2>Recuperar o acesso.</h2>
+      <p>
+        Mandamos um link para o seu e-mail. Ele vale por tempo limitado e abre
+        uma página onde você define a nova senha.
+      </p>
+    </div>
+    <p class="assinatura">
+      Se o e-mail não chegar em alguns minutos, confira a caixa de spam.
+    </p>
+  </section>
+
+  <section class="entrada-form">
+    <div class="caixa">
+      <div class="entrada-topo">
+        <button class="tema-botao" type="button" data-tema-botao
+                aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+          <span class="icone-sol">{{ icone('sol') }}</span>
+          <span class="icone-lua">{{ icone('lua') }}</span>
+        </button>
+      </div>
+
+      {% if enviado %}
+        <h1>Confira seu e-mail</h1>
+        <p class="sub">
+          Se <b>{{ email }}</b> tiver acesso a este sistema, o link de redefinição
+          já está a caminho.
+        </p>
+        <div class="faixa info" style="margin-top:4px">
+          <strong>Não recebeu?</strong>
+          Olhe no spam. Se não chegar, peça a quem é dono do sistema para trocar
+          sua senha direto em Usuários.
+        </div>
+        <a class="botao neutro" href="/entrar" style="width:100%">Voltar para o login</a>
+      {% else %}
+        <h1>Esqueci minha senha</h1>
+        <p class="sub">
+          Informe o e-mail do seu acesso. Enviamos um link para você definir uma
+          senha nova.
+        </p>
+        <form method="post" action="/recuperar">
+          <label class="campo" style="margin-bottom:18px">
+            E-mail
+            <input type="text" name="email" required autocomplete="username" autofocus>
+          </label>
+          <button class="botao" type="submit">Enviar link de redefinição</button>
+        </form>
+        <p class="sub" style="margin:20px 0 0; text-align:center">
+          Lembrou? <a href="/entrar">Voltar para o login</a>.
+        </p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

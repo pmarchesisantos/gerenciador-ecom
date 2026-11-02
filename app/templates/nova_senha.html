@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block titulo %}Definir nova senha - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<div class="entrada-tela">
+
+  <section class="entrada-arte">
+    <div class="marca">
+      <span class="marca-sigla">SE</span>
+      <span>Sistema-Ecom</span>
+    </div>
+    <div class="chamada">
+      <h2>Quase lá.</h2>
+      <p>Escolha uma senha nova e você já entra direto no painel.</p>
+    </div>
+    <p class="assinatura">
+      O link de redefinição vale uma vez só e expira. Se der erro, peça outro.
+    </p>
+  </section>
+
+  <section class="entrada-form">
+    <div class="caixa">
+      <div class="entrada-topo">
+        <button class="tema-botao" type="button" data-tema-botao
+                aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+          <span class="icone-sol">{{ icone('sol') }}</span>
+          <span class="icone-lua">{{ icone('lua') }}</span>
+        </button>
+      </div>
+
+      <h1>Nova senha</h1>
+      <p class="sub" id="instrucao">Conferindo o link…</p>
+
+      <div id="recado"></div>
+
+      <form id="form-senha" style="display:none">
+        <label class="campo" style="margin-bottom:14px">
+          Nova senha
+          <input type="password" id="nova" required minlength="8"
+                 autocomplete="new-password" autofocus>
+        </label>
+        <label class="campo" style="margin-bottom:18px">
+          Repita a nova senha
+          <input type="password" id="confirma" required minlength="8"
+                 autocomplete="new-password">
+        </label>
+        <button class="botao" type="submit" id="salvar">Salvar e entrar</button>
+      </form>
+
+      <p class="sub" style="margin:20px 0 0; text-align:center">
+        <a href="/entrar">Voltar para o login</a>
+      </p>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    var URL_SUPABASE = {{ supabase_url|tojson }};
+    var CHAVE = {{ supabase_anon|tojson }};
+
+    var instrucao = document.getElementById('instrucao');
+    var recado = document.getElementById('recado');
+    var form = document.getElementById('form-senha');
+    var salvar = document.getElementById('salvar');
+
+    function avisar(tipo, titulo, texto) {
+      recado.innerHTML = '';
+      var d = document.createElement('div');
+      d.className = 'faixa ' + tipo;
+      var b = document.createElement('strong');
+      b.textContent = titulo;
+      d.appendChild(b);
+      d.appendChild(document.createTextNode(texto));
+      recado.appendChild(d);
+    }
+
+    // O token vem no fragmento da URL. O navegador nunca manda fragmento para
+    // o servidor, então esta troca acontece inteira aqui, falando direto com
+    // o Supabase - a senha nova não passa pelo nosso backend.
+    var dados = new URLSearchParams(location.hash.replace(/^#/, ''));
+    var token = dados.get('access_token');
+    var erro = dados.get('error_description') || dados.get('error');
+
+    if (erro) {
+      instrucao.textContent = 'Este link não serve mais.';
+      avisar('erro', 'Link inválido ou expirado. ', decodeURIComponent(erro).replace(/\+/g, ' '));
+      return;
+    }
+    if (!token) {
+      instrucao.textContent = 'Abra esta página pelo link que chegou no seu e-mail.';
+      avisar('atencao', 'Faltou o link. ',
+             'Peça um novo em "Esqueci minha senha" e clique no botão do e-mail.');
+      return;
+    }
+    if (!URL_SUPABASE || !CHAVE) {
+      instrucao.textContent = 'Configuração incompleta.';
+      avisar('erro', 'Supabase não configurado. ',
+             'Peça a quem é dono do sistema para conferir o diagnóstico.');
+      return;
+    }
+
+    instrucao.textContent = 'Escolha uma senha de pelo menos 8 caracteres.';
+    form.style.display = '';
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var nova = document.getElementById('nova').value;
+      var confirma = document.getElementById('confirma').value;
+
+      if (nova.length < 8) {
+        avisar('erro', 'Senha curta. ', 'Use ao menos 8 caracteres.');
+        return;
+      }
+      if (nova !== confirma) {
+        avisar('erro', 'As senhas não batem. ', 'Digite a mesma senha nos dois campos.');
+        return;
+      }
+
+      salvar.disabled = true;
+      salvar.textContent = 'Salvando…';
+
+      fetch(URL_SUPABASE + '/auth/v1/user', {
+        method: 'PUT',
+        headers: {
+          'apikey': CHAVE,
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: nova })
+      }).then(function (r) {
+        if (r.ok) {
+          location.href = '/entrar?aviso=' +
+            encodeURIComponent('Senha alterada. Entre com a nova senha.');
+          return;
+        }
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          salvar.disabled = false;
+          salvar.textContent = 'Salvar e entrar';
+          avisar('erro', 'Não consegui trocar a senha. ',
+                 (j.msg || j.error_description || j.message ||
+                  'O link pode ter expirado. Peça outro.'));
+        });
+      }).catch(function () {
+        salvar.disabled = false;
+        salvar.textContent = 'Salvar e entrar';
+        avisar('erro', 'Falha de conexão. ', 'Tente de novo em instantes.');
+      });
+    });
+  })();
+</script>
+{% endblock %}

@@ -358,6 +358,75 @@ def tema(c: TestClient) -> None:
            "#2a78d6" not in t and "borderColor: d." not in t)
 
 
+def senhas(c: TestClient) -> None:
+    print("recuperacao e troca de senha:")
+
+    c.cookies.clear()
+    for rota in ("/recuperar", "/nova-senha"):
+        r = c.get(rota)
+        checar(f"{rota} aberta sem login", r.status_code == 200, f"HTTP {r.status_code}")
+
+    r = c.get("/entrar")
+    checar("login oferece recuperacao", 'href="/recuperar"' in r.text)
+    checar("sumiu o recado antigo",
+           "dono do sistema pode troca" not in r.text)
+
+    r = c.get("/nova-senha")
+    checar("troca acontece no cliente, nao no servidor",
+           "location.hash" in r.text and "/auth/v1/user" in r.text)
+    checar("nova senha exige 8 caracteres", "nova.length < 8" in r.text)
+
+    r = c.get("/minha-conta", follow_redirects=False)
+    checar("minha conta exige login", r.status_code == 303)
+
+    logar(c, "leitor")
+    r = c.get("/minha-conta")
+    checar("leitor tem minha conta", r.status_code == 200
+           and "Trocar senha" in r.text)
+    checar("pede a senha atual", 'name="senha_atual"' in r.text)
+
+    r = c.post("/minha-conta/senha",
+               data={"senha_atual": "x", "nova": "abcdefgh", "confirma": "outracoisa"},
+               follow_redirects=False)
+    checar("confirmacao diferente e recusada", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    r = c.post("/minha-conta/senha",
+               data={"senha_atual": "x", "nova": "curta", "confirma": "curta"},
+               follow_redirects=False)
+    checar("senha curta e recusada", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    from app.auth import url_nova_senha
+    checar("link do e-mail aponta para o app",
+           url_nova_senha().endswith("/nova-senha"), url_nova_senha())
+
+    logar(c, "dono")
+
+
+def responsivo(c: TestClient) -> None:
+    print("celular:")
+    logar(c, "dono")
+    r = c.get("/")
+    checar("barra superior do celular", 'class="barra-mobile"' in r.text)
+    checar("gaveta com fundo escuro", 'id="fundo-menu"' in r.text)
+    checar("gaveta fecha no Escape", "'Escape'" in r.text)
+
+    r = c.get("/pedidos?exemplo=1")
+    checar("tabela de pedidos empilha", 'class="empilha"' in r.text
+           and 'data-rotulo="Total"' in r.text)
+
+    css = c.get("/static/estilo.css").text
+    checar("menu vira sobreposicao no celular",
+           'html[data-menu="aberto"] aside.lateral' in css)
+    checar("formulario de uma coluna no celular",
+           "form.filtros { flex-direction: column" in css)
+    checar("marca do login encolhe no celular",
+           css.rindex(".entrada-arte ul { display: none; }")
+           > css.index(".entrada-arte ul {"),
+           "override depois da base")
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -370,6 +439,8 @@ def main() -> int:
         dashboard(c)
         envios(c)
         tema(c)
+        senhas(c)
+        responsivo(c)
     canais()
     cripto()
     agregacao()
