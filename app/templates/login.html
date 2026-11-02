@@ -2,100 +2,63 @@
 {% block titulo %}Entrar - Sistema-Ecom{% endblock %}
 
 {% block conteudo %}
-<div class="entrada-tela">
+<div class="entrada">
+  <div class="caixa">
 
-  {# ------------------------------------------------------- lado da marca #}
-  <section class="entrada-arte">
-    <div class="marca">
+    <div class="entrada-topo">
+      <button class="tema-botao" type="button" data-tema-botao
+              aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+        <span class="icone-sol">{{ icone('sol') }}</span>
+        <span class="icone-lua">{{ icone('lua') }}</span>
+      </button>
+    </div>
+
+    <div class="marca-grande">
       <span class="marca-sigla">SE</span>
       <span>Sistema-Ecom</span>
     </div>
 
-    <div class="chamada">
-      <h2>Suas vendas dos três marketplaces em uma tela só.</h2>
-      <p>
-        Mercado Livre, Shopee e TikTok Shop consultados ao vivo, com os status
-        de cada um traduzidos para a mesma linguagem.
+    {% if primeiro %}
+      <h1>Criar o primeiro acesso</h1>
+      <p class="sub">
+        Ninguém tem acesso ainda. Este usuário nasce como <b>dono</b>: é ele que
+        depois cadastra as lojas e libera o acesso das outras pessoas.
       </p>
-      <ul>
-        <li>
-          <span class="bolinha"><i style="background: var(--good)"></i></span>
-          <span>Faturamento, ticket médio e itens vendidos somados entre as lojas</span>
-        </li>
-        <li>
-          <span class="bolinha"><i style="background: var(--warning)"></i></span>
-          <span>Cancelados, devoluções e estornos separados do que de fato vendeu</span>
-        </li>
-        <li>
-          <span class="bolinha"><i style="background: var(--canal-tiktok)"></i></span>
-          <span>Fila de pedidos pagos esperando despacho, de todos os canais juntos</span>
-        </li>
-      </ul>
-    </div>
+      <form method="post" action="/primeiro-acesso">
+        <label class="campo">
+          Seu nome
+          <input type="text" name="nome" placeholder="opcional">
+        </label>
+        <label class="campo">
+          E-mail
+          <input type="text" name="email" required autocomplete="username" autofocus>
+        </label>
+        <label class="campo">
+          Senha
+          <input type="password" name="senha" required minlength="8"
+                 autocomplete="new-password">
+          <span class="dica">Mínimo de 8 caracteres. Guarde bem.</span>
+        </label>
+        <button class="botao" type="submit">Criar acesso e entrar</button>
+      </form>
+    {% else %}
+      <h1>Entrar</h1>
+      <p class="sub">Acesse o painel de vendas da sua operação.</p>
+      <form method="post" action="/entrar">
+        <input type="hidden" name="proximo" value="{{ proximo }}">
+        <label class="campo">
+          E-mail
+          <input type="text" name="email" required autocomplete="username" autofocus>
+        </label>
+        <label class="campo">
+          Senha
+          <input type="password" name="senha" required autocomplete="current-password">
+        </label>
+        <button class="botao" type="submit">Entrar</button>
+      </form>
+      <p class="rodape-entrada"><a href="/recuperar">Esqueci minha senha</a></p>
+    {% endif %}
 
-    <p class="assinatura">
-      Consulta ao vivo nas plataformas. No banco guardamos apenas as credenciais de acesso.
-    </p>
-  </section>
-
-  {# ---------------------------------------------------- lado do formulário #}
-  <section class="entrada-form">
-    <div class="caixa">
-
-      <div class="entrada-topo">
-        <button class="tema-botao" type="button" data-tema-botao
-                aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
-          <span class="icone-sol">{{ icone('sol') }}</span>
-          <span class="icone-lua">{{ icone('lua') }}</span>
-        </button>
-      </div>
-
-      {% if primeiro %}
-        <h1>Criar o primeiro acesso</h1>
-        <p class="sub">
-          Ninguém tem acesso ainda. Este usuário nasce como <b>dono</b>: é ele que
-          depois cadastra as lojas e libera o acesso das outras pessoas.
-        </p>
-        <form method="post" action="/primeiro-acesso">
-          <label class="campo" style="margin-bottom:14px">
-            Seu nome
-            <input type="text" name="nome" placeholder="opcional">
-          </label>
-          <label class="campo" style="margin-bottom:14px">
-            E-mail
-            <input type="text" name="email" required autocomplete="username" autofocus>
-          </label>
-          <label class="campo" style="margin-bottom:18px">
-            Senha
-            <input type="password" name="senha" required minlength="8"
-                   autocomplete="new-password">
-            <span class="sub" style="margin:0; font-weight:400; text-transform:none">
-              Mínimo de 8 caracteres. Guarde bem: não há recuperação automática.
-            </span>
-          </label>
-          <button class="botao" type="submit">Criar acesso e entrar</button>
-        </form>
-      {% else %}
-        <h1>Entrar</h1>
-        <p class="sub">Acesse o painel de vendas da sua operação.</p>
-        <form method="post" action="/entrar">
-          <input type="hidden" name="proximo" value="{{ proximo }}">
-          <label class="campo" style="margin-bottom:14px">
-            E-mail
-            <input type="text" name="email" required autocomplete="username" autofocus>
-          </label>
-          <label class="campo" style="margin-bottom:18px">
-            Senha
-            <input type="password" name="senha" required autocomplete="current-password">
-          </label>
-          <button class="botao" type="submit">Entrar</button>
-        </form>
-        <p class="sub" style="margin:20px 0 0; text-align:center">
-          <a href="/recuperar">Esqueci minha senha</a>
-        </p>
-      {% endif %}
-
-    </div>
-  </section>
+  </div>
 </div>
 {% endblock %}

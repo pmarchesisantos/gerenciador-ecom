@@ -270,14 +270,31 @@ h3 { font-size: 15px; margin: 0 0 8px; letter-spacing: -.1px; }
 .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .g5 { grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); }
 .painel-2 { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+
+/* Item de grid nasce com min-width:auto, ou seja, "no minimo o tamanho do
+   conteudo". Sem isto, uma tabela larga estica o cartao inteiro e quem rola
+   de lado passa a ser a pagina, desalinhando o resto da tela. Com min-width:0
+   o cartao respeita a coluna e quem rola e a tabela, dentro dele. */
+.painel-2 > *, .grade > *, .kpis > * { min-width: 0; }
 @media (max-width: 1050px) { .painel-2 { grid-template-columns: 1fr; } }
 
 /* ------------------------------------------------------------- hero/KPI */
 .kpis { display: grid; gap: 16px; grid-template-columns: 1.25fr 2.4fr; }
 .kpis .tiles { display: grid; gap: 14px; grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 1250px) { .kpis { grid-template-columns: 1fr; } }
-@media (max-width: 1050px) { .kpis .tiles { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px)  { .kpis .tiles { grid-template-columns: 1fr; } }
+
+/* Em tela estreita os indicadores nao empilham um por linha - isso deixava a
+   pagina quilometrica. Viram uma faixa que rola para o lado, mantendo a
+   largura legivel de cada um. */
+@media (max-width: 1050px) {
+  .kpis .tiles {
+    display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px;
+    scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .kpis .tiles .tile { flex: 0 0 190px; scroll-snap-align: start; }
+  .kpis .tiles .tile:hover { transform: none; }
+}
 
 .hero {
   position: relative; overflow: hidden;
@@ -384,7 +401,7 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background var(--transicao); }
 tbody tr:hover { background: var(--papel-2); }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-.rolagem { overflow-x: auto; }
+.rolagem { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
 table.compacta td, table.compacta th { padding: 9px 10px; }
 
 /* ---------------------------------------------------------------- selos */
@@ -512,71 +529,6 @@ details.canal .corpo { padding: 18px 20px; }
 
 footer.pe { padding: 26px 0 36px; color: var(--tinta-3); font-size: 12px; }
 
-/* ===================================================== tela de entrada */
-body.sem-lateral main { margin: 0; padding: 0; max-width: none; }
-body.sem-lateral footer.pe { display: none; }
-body.sem-lateral .faixa { margin: 16px 20px 0; }
-
-.entrada-tela {
-  display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh;
-}
-/* No celular a marca vira uma faixa curta no topo: o formulário precisa
-   caber na primeira tela, sem rolagem. O texto de apoio e a lista saem. */
-@media (max-width: 920px) {
-  .entrada-tela { grid-template-columns: 1fr; min-height: 100vh; }
-}
-
-/* lado esquerdo: a marca */
-.entrada-arte {
-  position: relative; overflow: hidden; color: #fff;
-  background:
-    radial-gradient(90% 70% at 15% 10%, rgba(57, 135, 229, .55) 0%, rgba(57, 135, 229, 0) 60%),
-    radial-gradient(80% 70% at 85% 95%, rgba(27, 175, 122, .35) 0%, rgba(27, 175, 122, 0) 55%),
-    linear-gradient(160deg, #16203a 0%, #0c1120 100%);
-  padding: 56px 52px; display: flex; flex-direction: column;
-}
-
-.entrada-arte .marca {
-  display: flex; align-items: center; gap: 12px;
-  font-weight: 700; font-size: 16px; letter-spacing: -.2px;
-}
-.entrada-arte .chamada {
-  margin: auto 0; max-width: 460px;
-}
-.entrada-arte .chamada h2 {
-  font-size: 34px; line-height: 1.2; letter-spacing: -1px; margin: 0 0 16px;
-  color: #fff; text-transform: none; font-weight: 700;
-}
-
-.entrada-arte .chamada p { color: #aab7cd; font-size: 15px; margin: 0 0 28px; }
-.entrada-arte ul { list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 14px; }
-.entrada-arte li {
-  display: flex; align-items: flex-start; gap: 12px;
-  color: #d4dbe7; font-size: 14px;
-}
-.entrada-arte li .bolinha {
-  width: 22px; height: 22px; border-radius: 7px; flex: none; margin-top: 1px;
-  display: grid; place-items: center; background: rgba(255, 255, 255, .1);
-}
-.entrada-arte li .bolinha i { width: 8px; height: 8px; border-radius: 2px; display: block; }
-.entrada-arte .assinatura { color: #76829a; font-size: 12px; margin-top: 32px; }
-
-/* lado direito: o formulário */
-.entrada-form {
-  display: flex; flex-direction: column; justify-content: center;
-  padding: 56px 52px; background: var(--plano);
-}
-
-.entrada-form .caixa { width: 100%; max-width: 380px; margin: 0 auto; }
-.entrada-form h1 { font-size: 26px; margin: 0 0 6px; }
-.entrada-form .campo { text-transform: none; letter-spacing: 0; font-size: 13px;
-  color: var(--tinta-2); font-weight: 600; }
-.entrada-form input { width: 100%; min-width: 0; padding: 11px 13px; }
-.entrada-form .botao { width: 100%; padding: 12px 16px; font-size: 15px; margin-top: 4px; }
-.entrada-topo { display: flex; justify-content: flex-end; margin-bottom: 18px; }
-.entrada-topo .tema-botao { color: var(--tinta-3); }
-.entrada-topo .tema-botao:hover { background: var(--neutro-fundo); color: var(--tinta); }
 
 /* alterna o ícone conforme o tema em vigor */
 .tema-botao .icone-lua, .tema-botao .icone-sol { line-height: 0; }
@@ -667,48 +619,55 @@ body.sem-lateral .faixa { margin: 16px 20px 0; }
   dl.dados dd { padding: 0 0 10px; }
 
   table.compacta td, table.compacta th, th, td { padding: 8px 9px; font-size: 13px; }
+  /* a tabela mantem a largura natural e rola para o lado dentro do cartao */
+  .rolagem table { min-width: max-content; }
 }
 
-/* ---- tabelas que viram cartões no celular ---------------------------- */
-/* Tabela de pedido tem onze colunas: rolar na horizontal num celular é
-   ruim de usar. Cada linha vira um bloco rotulado.                        */
-@media (max-width: 760px) {
-  table.empilha thead { display: none; }
-  table.empilha, table.empilha tbody, table.empilha tr, table.empilha td { display: block; }
-  table.empilha tr {
-    border: 1px solid var(--borda); border-radius: var(--raio-p);
-    padding: 10px 12px; margin-bottom: 10px; background: var(--papel);
-  }
-  table.empilha tr:hover { background: var(--papel); }
-  table.empilha td {
-    border: 0; padding: 5px 0; display: flex; gap: 12px;
-    align-items: baseline; justify-content: space-between; text-align: right;
-  }
-  table.empilha td::before {
-    content: attr(data-rotulo); flex: none; text-align: left;
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px;
-    color: var(--tinta-3); font-weight: 700; padding-top: 2px;
-  }
-  table.empilha td:empty { display: none; }
-  table.empilha .rolagem { overflow: visible; }
+/* ===================================================== tela de entrada ==
+   Um cartão centralizado, sem painel decorativo: o que importa aqui é o
+   formulário, e qualquer coisa ao lado dele só empurra os campos para longe
+   em tela estreita.
+   ======================================================================= */
+body.sem-lateral main { margin: 0; padding: 0; max-width: none; }
+body.sem-lateral footer.pe { display: none; }
+body.sem-lateral .faixa { max-width: 420px; margin: 20px auto 0; }
+
+.entrada {
+  min-height: 100vh; display: grid; place-items: center;
+  padding: 28px 18px 48px;
+}
+.entrada .caixa {
+  width: 100%; max-width: 420px;
+  background: var(--papel); border: 1px solid var(--borda);
+  border-radius: var(--raio); padding: 26px 28px 28px;
+  box-shadow: var(--sombra-alta);
+}
+@media (max-width: 520px) {
+  .entrada { padding: 16px 14px 32px; align-items: start; }
+  .entrada .caixa { padding: 22px 20px 24px; }
 }
 
-/* ---- entrada no celular ---------------------------------------------- */
-/* Precisa vir depois das regras base de .entrada-arte: mesma especificidade,
-   quem está por último vence. No celular a marca vira faixa curta e o
-   formulário aparece sem rolagem.                                         */
-@media (max-width: 920px) {
-  .entrada-arte { padding: 20px 20px 18px; }
-  .entrada-arte .chamada { margin: 0; max-width: none; }
-  .entrada-arte .chamada h2 {
-    font-size: 19px; line-height: 1.3; margin: 12px 0 0; letter-spacing: -.3px;
-  }
-  .entrada-arte .chamada p { display: none; }
-  .entrada-arte ul { display: none; }
-  .entrada-arte .assinatura { display: none; }
+.entrada-topo { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.entrada-topo .tema-botao { color: var(--tinta-3); }
+.entrada-topo .tema-botao:hover { background: var(--neutro-fundo); color: var(--tinta); }
 
-  .entrada-form { padding: 24px 20px 36px; justify-content: flex-start; }
-  .entrada-form .caixa { max-width: none; }
-  .entrada-form h1 { font-size: 23px; }
-  .entrada-topo { margin-bottom: 10px; }
+.marca-grande {
+  display: flex; align-items: center; gap: 11px; margin-bottom: 20px;
+  font-weight: 700; font-size: 15px; letter-spacing: -.2px;
+}
+
+.entrada h1 { font-size: 24px; margin: 0 0 6px; }
+.entrada .sub { margin: 0 0 20px; }
+.entrada label.campo {
+  text-transform: none; letter-spacing: 0; font-size: 13px;
+  color: var(--tinta-2); font-weight: 600; margin-bottom: 14px;
+}
+.entrada input { width: 100%; min-width: 0; padding: 11px 13px; }
+.entrada .dica {
+  font-size: 12px; color: var(--tinta-3); font-weight: 400; text-transform: none;
+}
+.entrada .botao { width: 100%; padding: 12px 16px; font-size: 15px; margin-top: 6px; }
+.entrada .faixa { margin: 0 0 16px; }
+.rodape-entrada {
+  margin: 18px 0 0; text-align: center; font-size: 13px; color: var(--tinta-2);
 }

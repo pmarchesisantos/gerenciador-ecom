@@ -54,18 +54,18 @@
         <p class="sub">{{ contas|length }} loja{{ 's' if contas|length != 1 }} somando neste painel.</p>
       </div>
       <div class="rolagem">
-        <table class="compacta empilha">
+        <table class="compacta">
           <thead><tr>
             <th>Conta</th><th>Canal</th><th>Loja</th><th>Situação</th><th>Token vence</th><th></th>
           </tr></thead>
           <tbody>
           {% for c in contas %}
             <tr>
-              <td data-rotulo="Conta"><a href="/contas/{{ c.id }}">{{ c.apelido }}</a></td>
-              <td data-rotulo="Canal">{{ c.canal_rotulo }}</td>
-              <td data-rotulo="Loja">{{ c.loja_nome or '-' }} <span class="cru">{{ c.loja_id or '' }}</span></td>
-              <td data-rotulo="Situação"><span class="selo {{ c.situacao.cor }}">{{ c.situacao.rotulo }}</span></td>
-              <td data-rotulo="Token vence">{{ c.access_expira_em_dt|falta }}</td>
+              <td><a href="/contas/{{ c.id }}">{{ c.apelido }}</a></td>
+              <td>{{ c.canal_rotulo }}</td>
+              <td>{{ c.loja_nome or '-' }} <span class="cru">{{ c.loja_id or '' }}</span></td>
+              <td><span class="selo {{ c.situacao.cor }}">{{ c.situacao.rotulo }}</span></td>
+              <td>{{ c.access_expira_em_dt|falta }}</td>
               <td class="num"><a class="botao pequeno neutro" href="/contas/{{ c.id }}">Detalhes</a></td>
             </tr>
           {% endfor %}
@@ -314,7 +314,7 @@
     <p class="sub">Os 10 mais recentes do período.</p>
   </div>
   <div class="rolagem">
-    <table class="compacta empilha">
+    <table class="compacta">
       <thead><tr>
         <th>Quando</th><th>Canal</th><th>Pedido</th><th>Itens</th>
         <th>Situação</th><th class="num">Valor</th>
@@ -322,12 +322,12 @@
       <tbody>
       {% for p in ultimos %}
         <tr>
-          <td data-rotulo="Quando">{{ p.criado_em|data }}</td>
-          <td data-rotulo="Canal">{{ p.canal_rotulo }}</td>
-          <td data-rotulo="Pedido" class="cru">{{ p.pedido_id }}</td>
-          <td data-rotulo="Itens">{{ p.resumo_itens }}</td>
-          <td data-rotulo="Situação"><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
-          <td data-rotulo="Valor" class="num">{{ p.valor_total|moeda }}</td>
+          <td>{{ p.criado_em|data }}</td>
+          <td>{{ p.canal_rotulo }}</td>
+          <td class="cru">{{ p.pedido_id }}</td>
+          <td>{{ p.resumo_itens }}</td>
+          <td><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
+          <td class="num">{{ p.valor_total|moeda }}</td>
         </tr>
       {% endfor %}
       </tbody>

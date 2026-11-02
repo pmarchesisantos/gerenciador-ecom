@@ -2,56 +2,44 @@
 {% block titulo %}Definir nova senha - Sistema-Ecom{% endblock %}
 
 {% block conteudo %}
-<div class="entrada-tela">
+<div class="entrada">
+  <div class="caixa">
 
-  <section class="entrada-arte">
-    <div class="marca">
+    <div class="entrada-topo">
+      <button class="tema-botao" type="button" data-tema-botao
+              aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+        <span class="icone-sol">{{ icone('sol') }}</span>
+        <span class="icone-lua">{{ icone('lua') }}</span>
+      </button>
+    </div>
+
+    <div class="marca-grande">
       <span class="marca-sigla">SE</span>
       <span>Sistema-Ecom</span>
     </div>
-    <div class="chamada">
-      <h2>Quase lá.</h2>
-      <p>Escolha uma senha nova e você já entra direto no painel.</p>
-    </div>
-    <p class="assinatura">
-      O link de redefinição vale uma vez só e expira. Se der erro, peça outro.
-    </p>
-  </section>
 
-  <section class="entrada-form">
-    <div class="caixa">
-      <div class="entrada-topo">
-        <button class="tema-botao" type="button" data-tema-botao
-                aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
-          <span class="icone-sol">{{ icone('sol') }}</span>
-          <span class="icone-lua">{{ icone('lua') }}</span>
-        </button>
-      </div>
+    <h1>Nova senha</h1>
+    <p class="sub" id="instrucao">Conferindo o link…</p>
 
-      <h1>Nova senha</h1>
-      <p class="sub" id="instrucao">Conferindo o link…</p>
+    <div id="recado"></div>
 
-      <div id="recado"></div>
+    <form id="form-senha" style="display:none">
+      <label class="campo">
+        Nova senha
+        <input type="password" id="nova" required minlength="8"
+               autocomplete="new-password" autofocus>
+      </label>
+      <label class="campo">
+        Repita a nova senha
+        <input type="password" id="confirma" required minlength="8"
+               autocomplete="new-password">
+      </label>
+      <button class="botao" type="submit" id="salvar">Salvar e entrar</button>
+    </form>
 
-      <form id="form-senha" style="display:none">
-        <label class="campo" style="margin-bottom:14px">
-          Nova senha
-          <input type="password" id="nova" required minlength="8"
-                 autocomplete="new-password" autofocus>
-        </label>
-        <label class="campo" style="margin-bottom:18px">
-          Repita a nova senha
-          <input type="password" id="confirma" required minlength="8"
-                 autocomplete="new-password">
-        </label>
-        <button class="botao" type="submit" id="salvar">Salvar e entrar</button>
-      </form>
+    <p class="rodape-entrada"><a href="/entrar">Voltar para o login</a></p>
 
-      <p class="sub" style="margin:20px 0 0; text-align:center">
-        <a href="/entrar">Voltar para o login</a>
-      </p>
-    </div>
-  </section>
+  </div>
 </div>
 
 <script>

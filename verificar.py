@@ -405,7 +405,7 @@ def senhas(c: TestClient) -> None:
 
 
 def responsivo(c: TestClient) -> None:
-    print("celular:")
+    print("tela estreita:")
     logar(c, "dono")
     r = c.get("/")
     checar("barra superior do celular", 'class="barra-mobile"' in r.text)
@@ -413,18 +413,38 @@ def responsivo(c: TestClient) -> None:
     checar("gaveta fecha no Escape", "'Escape'" in r.text)
 
     r = c.get("/pedidos?exemplo=1")
-    checar("tabela de pedidos empilha", 'class="empilha"' in r.text
-           and 'data-rotulo="Total"' in r.text)
+    checar("tabela rola, nao empilha",
+           'class="rolagem"' in r.text and "empilha" not in r.text)
+    checar("sem rotulos de empilhamento", "data-rotulo" not in r.text)
 
     css = c.get("/static/estilo.css").text
     checar("menu vira sobreposicao no celular",
            'html[data-menu="aberto"] aside.lateral' in css)
     checar("formulario de uma coluna no celular",
            "form.filtros { flex-direction: column" in css)
-    checar("marca do login encolhe no celular",
-           css.rindex(".entrada-arte ul { display: none; }")
-           > css.index(".entrada-arte ul {"),
-           "override depois da base")
+    checar("indicadores viram faixa que rola",
+           ".kpis .tiles {" in css and "overflow-x: auto" in css)
+    checar("tabela mantem a largura e rola",
+           ".rolagem table { min-width: max-content; }" in css)
+
+
+def entrada(c: TestClient) -> None:
+    print("tela de entrada:")
+    c.cookies.clear()
+    for rota in ("/entrar", "/recuperar", "/nova-senha"):
+        r = c.get(rota)
+        checar(f"{rota} abre", r.status_code == 200, f"HTTP {r.status_code}")
+        checar(f"{rota} sem painel decorativo",
+               "entrada-arte" not in r.text and "entrada-tela" not in r.text)
+        checar(f"{rota} e um cartao centralizado",
+               'class="entrada"' in r.text and 'class="caixa"' in r.text)
+
+    css = c.get("/static/estilo.css").text
+    checar("entrada centralizada no css",
+           ".entrada {" in css and "place-items: center" in css)
+    checar("css do split removido",
+           "entrada-arte" not in css and "entrada-tela" not in css)
+    logar(c, "dono")
 
 
 def main() -> int:
@@ -441,6 +461,7 @@ def main() -> int:
         tema(c)
         senhas(c)
         responsivo(c)
+        entrada(c)
     canais()
     cripto()
     agregacao()

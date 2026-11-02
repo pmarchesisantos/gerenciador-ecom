@@ -123,7 +123,7 @@
 {% if lista %}
 <div class="cartao">
   <div class="rolagem">
-    <table class="empilha">
+    <table>
       <thead><tr>
         <th>Quando</th><th>Canal / conta</th><th>Pedido</th><th>Comprador</th>
         <th>Itens</th><th>Pagamento</th><th>Envio</th><th>Na plataforma</th>
@@ -132,36 +132,36 @@
       <tbody>
       {% for p in lista %}
         <tr>
-          <td data-rotulo="Quando" style="white-space:nowrap">{{ p.criado_em|data }}</td>
-          <td data-rotulo="Canal">{{ p.canal_rotulo }}<br><span class="cru">{{ p.conta }}</span></td>
-          <td data-rotulo="Pedido">
+          <td style="white-space:nowrap">{{ p.criado_em|data }}</td>
+          <td>{{ p.canal_rotulo }}<br><span class="cru">{{ p.conta }}</span></td>
+          <td>
             {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="cru">{{ p.pedido_id }}</a>
             {% else %}<span class="cru">{{ p.pedido_id }}</span>{% endif %}
           </td>
-          <td data-rotulo="Comprador">{{ p.comprador }}</td>
-          <td data-rotulo="Itens">
+          <td>{{ p.comprador }}</td>
+          <td>
             <span>
             {% for i in p.itens %}
               <div>{{ i.quantidade }}x {{ i.titulo }} <span class="cru">{{ i.sku }}</span></div>
             {% else %}-{% endfor %}
             </span>
           </td>
-          <td data-rotulo="Pagamento"><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
-          <td data-rotulo="Envio">
+          <td><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
+          <td>
             <span>
               <span class="selo {{ p.envio_cor }}">{{ p.envio_rotulo }}</span>
               {% if p.envio_id %}<br><span class="cru">{{ p.envio_id }}</span>{% endif %}
             </span>
           </td>
-          <td data-rotulo="Na plataforma">
+          <td>
             <span>
               <span class="cru">{{ p.status_origem }}</span>
               {% if p.envio_origem %}<br><span class="cru">{{ p.envio_origem }}</span>{% endif %}
             </span>
           </td>
-          <td data-rotulo="Produtos" class="num">{{ p.valor_produtos|moeda }}</td>
-          <td data-rotulo="Frete" class="num">{{ p.frete|moeda }}</td>
-          <td data-rotulo="Total" class="num"><b>{{ p.valor_total|moeda }}</b></td>
+          <td class="num">{{ p.valor_produtos|moeda }}</td>
+          <td class="num">{{ p.frete|moeda }}</td>
+          <td class="num"><b>{{ p.valor_total|moeda }}</b></td>
         </tr>
       {% endfor %}
       </tbody>
