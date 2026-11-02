@@ -9,7 +9,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from app import db
+from app import auth, db
 from app.canais import CANAIS, ErroCanal, canal
 from app.cripto import mascarar, proteger, revelar
 from app.modelos import CANAIS_ROTULO, Tokens
@@ -75,10 +75,16 @@ def situacao(linha: dict) -> dict:
             "detalhe": "Token valido."}
 
 
-async def resumo() -> list[dict]:
-    """Linhas enriquecidas para a tela de contas e para o painel."""
+async def resumo(usuario: dict | None = None) -> list[dict]:
+    """Linhas enriquecidas para a tela de contas e para o painel.
+
+    Quando recebe um usuario, devolve so as lojas que ele pode ver.
+    """
+    linhas = await listar()
+    if usuario is not None:
+        linhas = filtrar_visiveis(linhas, await ids_visiveis(usuario))
     saida = []
-    for linha in await listar():
+    for linha in linhas:
         c = CANAIS.get(linha["canal"])
         saida.append(
             {
@@ -98,6 +104,77 @@ async def resumo() -> list[dict]:
 # ---------------------------------------------------------------------------
 # escrita
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# visibilidade: quem enxerga qual loja
+# ---------------------------------------------------------------------------
+async def ids_visiveis(usuario: dict | None) -> set[str] | None:
+    """Ids das contas que a pessoa pode ver. None significa "todas" (dono)."""
+    if auth.pode(usuario, auth.DONO):
+        return None
+    if not usuario:
+        return set()
+    linhas = await db.selecionar(
+        "conta_acessos", {"usuario_id": f"eq.{usuario['id']}"}
+    )
+    return {linha["conta_id"] for linha in linhas}
+
+
+def filtrar_visiveis(linhas: list[dict], permitidos: set[str] | None) -> list[dict]:
+    if permitidos is None:
+        return linhas
+    return [linha for linha in linhas if linha["id"] in permitidos]
+
+
+async def pode_ver(usuario: dict | None, conta_id: str) -> bool:
+    permitidos = await ids_visiveis(usuario)
+    return permitidos is None or conta_id in permitidos
+
+
+async def acessos_por_conta() -> dict[str, set[str]]:
+    """{conta_id: {usuario_id, ...}} - usado para montar as telas."""
+    mapa: dict[str, set[str]] = {}
+    for linha in await db.selecionar("conta_acessos"):
+        mapa.setdefault(linha["conta_id"], set()).add(linha["usuario_id"])
+    return mapa
+
+
+async def acessos_por_usuario() -> dict[str, set[str]]:
+    mapa: dict[str, set[str]] = {}
+    for linha in await db.selecionar("conta_acessos"):
+        mapa.setdefault(linha["usuario_id"], set()).add(linha["conta_id"])
+    return mapa
+
+
+async def definir_acessos(
+    conta_id: str, usuario_ids: list[str], quem: dict | None = None
+) -> None:
+    """Troca de uma vez quem enxerga esta loja."""
+    atuais = {
+        linha["usuario_id"]
+        for linha in await db.selecionar("conta_acessos", {"conta_id": f"eq.{conta_id}"})
+    }
+    novos = {u for u in usuario_ids if u}
+
+    for usuario_id in atuais - novos:
+        await db.apagar(
+            "conta_acessos",
+            {"conta_id": f"eq.{conta_id}", "usuario_id": f"eq.{usuario_id}"},
+        )
+    for usuario_id in novos - atuais:
+        await db.inserir(
+            "conta_acessos", {"conta_id": conta_id, "usuario_id": usuario_id}
+        )
+
+    if atuais != novos:
+        await db.registrar_evento(
+            "acesso",
+            f"quem enxerga esta loja passou a ser {len(novos)} pessoa(s)",
+            conta_id,
+            None,
+            quem,
+        )
+
+
 async def criar(
     canal_nome: str,
     apelido: str,

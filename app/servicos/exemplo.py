@@ -15,6 +15,11 @@ from app.modelos import (
     CANCELADA,
     DEVOLVIDA,
     EFETIVADA,
+    ENVIO_A_ENVIAR,
+    ENVIO_ENTREGUE,
+    ENVIO_ENVIADO,
+    ENVIO_NAO_APLICA,
+    ENVIO_PROBLEMA,
     ESTORNADA,
     PENDENTE,
     ItemPedido,
@@ -59,6 +64,12 @@ ORIGEM = {
     },
 }
 
+# dentro de um pedido efetivado, o envio ainda pode estar em qualquer etapa
+SORTEIO_ENVIO = (
+    [ENVIO_ENTREGUE] * 55 + [ENVIO_ENVIADO] * 28 + [ENVIO_A_ENVIAR] * 15
+    + [ENVIO_PROBLEMA] * 2
+)
+
 CONTAS = {
     "mercadolivre": "Loja ML (exemplo)",
     "shopee": "Loja Shopee (exemplo)",
@@ -93,6 +104,15 @@ def pedidos(inicio: date, fim: date) -> list[Pedido]:
         produtos = sum((it.valor_total for it in itens), Decimal("0"))
         frete = Decimal(rnd.choice(["0.00", "0.00", "12.90", "19.90", "24.90"]))
 
+        if grupo == EFETIVADA:
+            envio = rnd.choice(SORTEIO_ENVIO)
+        elif grupo == DEVOLVIDA:
+            envio = ENVIO_PROBLEMA
+        elif grupo == ESTORNADA:
+            envio = rnd.choice([ENVIO_ENTREGUE, ENVIO_PROBLEMA])
+        else:
+            envio = ENVIO_NAO_APLICA
+
         saida.append(
             Pedido(
                 canal=canal,
@@ -101,6 +121,9 @@ def pedidos(inicio: date, fim: date) -> list[Pedido]:
                 criado_em=quando,
                 grupo=grupo,
                 status_origem=ORIGEM[canal][grupo],
+                envio=envio,
+                envio_origem=envio,
+                envio_id=f"ENV{rnd.randrange(10000, 99999)}" if envio != ENVIO_NAO_APLICA else "",
                 itens=itens,
                 comprador=f"comprador{rnd.randrange(100, 999)}",
                 valor_produtos=produtos,
@@ -129,4 +152,7 @@ def resultado(inicio: date, fim: date) -> dict:
         "erros": [],
         "houve_consulta": True,
         "atualizado_em": datetime.now(tz=FUSO),
+        "escopo_limitado": False,
+        "lojas_escondidas": 0,
+        "lojas_visiveis": len(por_canal),
     }

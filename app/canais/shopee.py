@@ -28,6 +28,11 @@ from app.modelos import (
     CANCELADA,
     DEVOLVIDA,
     EFETIVADA,
+    ENVIO_A_ENVIAR,
+    ENVIO_ENTREGUE,
+    ENVIO_ENVIADO,
+    ENVIO_NAO_APLICA,
+    ENVIO_PROBLEMA,
     PENDENTE,
     InfoConta,
     ItemPedido,
@@ -50,6 +55,21 @@ MAPA_STATUS = {
     "IN_CANCEL": CANCELADA,
     "CANCELLED": CANCELADA,
     "TO_RETURN": DEVOLVIDA,
+}
+
+# o proprio status do pedido ja diz onde o envio esta
+MAPA_ENVIO = {
+    "UNPAID": ENVIO_NAO_APLICA,
+    "IN_CANCEL": ENVIO_NAO_APLICA,
+    "CANCELLED": ENVIO_NAO_APLICA,
+    "READY_TO_SHIP": ENVIO_A_ENVIAR,
+    "PROCESSED": ENVIO_A_ENVIAR,
+    "RETRY_SHIP": ENVIO_A_ENVIAR,
+    "INVOICE_PENDING": ENVIO_A_ENVIAR,
+    "SHIPPED": ENVIO_ENVIADO,
+    "TO_CONFIRM_RECEIVE": ENVIO_ENVIADO,
+    "COMPLETED": ENVIO_ENTREGUE,
+    "TO_RETURN": ENVIO_PROBLEMA,
 }
 
 CAMPOS_DETALHE = ",".join(
@@ -299,6 +319,8 @@ class Shopee(CanalBase):
             criado_em=self._quando(cru.get("create_time")),
             grupo=grupo,
             status_origem=origem,
+            envio=MAPA_ENVIO.get(status, ENVIO_NAO_APLICA),
+            envio_origem=status,
             itens=itens,
             comprador=cru.get("buyer_username") or "-",
             valor_produtos=sum((i.valor_total for i in itens), dec(0)),

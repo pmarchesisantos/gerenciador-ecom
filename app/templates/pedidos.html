@@ -4,12 +4,27 @@
 {% block conteudo %}
 {% set qp = 'inicio=' ~ periodo.inicio ~ '&fim=' ~ periodo.fim %}
 {% set ex = '&exemplo=1' if exemplo else '' %}
+{% set tem_filtro = filtro.canal or filtro.grupo or filtro.q or filtro.envio %}
 
 <h1>Pedidos</h1>
 <p class="sub">
   {{ lista|length|inteiro }} pedido(s) entre {{ periodo.inicio|dia }} e {{ periodo.fim|dia }}
-  {% if filtro.canal or filtro.grupo or filtro.q %}(com filtro aplicado){% endif %}.
+  {% if tem_filtro %}(com filtro aplicado){% endif %}.
 </p>
+
+{# ---- fila de trabalho: o que falta despachar ------------------------- #}
+{% set a_enviar = contagem_envio.get('a_enviar', 0) %}
+{% if a_enviar %}
+  <div class="faixa {{ 'atencao' if filtro.envio != 'a_enviar' else 'info' }}">
+    <strong>{{ a_enviar }} pedido{{ 's' if a_enviar != 1 }} esperando despacho</strong>
+    Pagos e ainda não enviados.
+    {% if filtro.envio != 'a_enviar' %}
+      <a href="/pedidos?{{ qp }}&envio=a_enviar{{ ex }}">Ver só esses</a>.
+    {% else %}
+      Esta é a lista abaixo. <a href="/pedidos?{{ qp }}{{ ex }}">Ver todos os pedidos</a>.
+    {% endif %}
+  </div>
+{% endif %}
 
 <div class="cartao">
   <form class="filtros" method="get" action="/pedidos">
@@ -35,6 +50,16 @@
         {% endfor %}
       </select>
     </label>
+    <label class="campo">Envio
+      <select name="envio">
+        <option value="">Todos</option>
+        {% for e in envios %}
+          <option value="{{ e }}" {{ 'selected' if filtro.envio == e }}>
+            {{ rotulo_envio[e] }}{% if contagem_envio.get(e) %} ({{ contagem_envio[e] }}){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
     <label class="campo">Buscar
       <input type="text" name="q" value="{{ filtro.q }}" placeholder="pedido, SKU, produto...">
     </label>
@@ -42,14 +67,30 @@
     <button class="botao" type="submit">Filtrar</button>
     <a class="botao neutro" href="/pedidos?{{ qp }}{{ ex }}">Limpar</a>
   </form>
-  <div class="atalhos" style="margin-top:12px">
-    <a href="/pedidos?{{ qp }}{{ ex }}" class="{{ 'ativo' if not filtro.grupo }}">Todas</a>
+
+  <div class="atalhos" style="margin-top:14px">
+    <a href="/pedidos?{{ qp }}{{ ex }}" class="{{ 'ativo' if not tem_filtro }}">Tudo</a>
+    {% for e in ['a_enviar', 'enviado', 'entregue', 'problema'] %}
+      {% if contagem_envio.get(e) %}
+        <a href="/pedidos?{{ qp }}&envio={{ e }}{{ ex }}"
+           class="{{ 'ativo' if filtro.envio == e }}">
+          {{ rotulo_envio[e] }} ({{ contagem_envio[e] }})
+        </a>
+      {% endif %}
+    {% endfor %}
     {% for g in grupos %}
-      <a href="/pedidos?{{ qp }}&grupo={{ g }}{{ ex }}" class="{{ 'ativo' if filtro.grupo == g }}">
-        {{ rotulo_grupo[g] }} ({{ resumo_total.por_grupo[g].quantidade|inteiro }})
-      </a>
+      {% if resumo_total.por_grupo[g].quantidade %}
+        <a href="/pedidos?{{ qp }}&grupo={{ g }}{{ ex }}"
+           class="{{ 'ativo' if filtro.grupo == g }}">
+          {{ rotulo_grupo[g] }} ({{ resumo_total.por_grupo[g].quantidade|inteiro }})
+        </a>
+      {% endif %}
     {% endfor %}
   </div>
+
+  {% if filtro.envio %}
+    <p class="sub" style="margin:12px 0 0">{{ explica_envio[filtro.envio] }}</p>
+  {% endif %}
 </div>
 
 {% if dados.erros %}
@@ -85,13 +126,13 @@
     <table>
       <thead><tr>
         <th>Quando</th><th>Canal / conta</th><th>Pedido</th><th>Comprador</th>
-        <th>Itens</th><th>Situação</th><th>Status na plataforma</th>
+        <th>Itens</th><th>Pagamento</th><th>Envio</th><th>Na plataforma</th>
         <th class="num">Produtos</th><th class="num">Frete</th><th class="num">Total</th>
       </tr></thead>
       <tbody>
       {% for p in lista %}
         <tr>
-          <td>{{ p.criado_em|data }}</td>
+          <td style="white-space:nowrap">{{ p.criado_em|data }}</td>
           <td>{{ p.canal_rotulo }}<br><span class="cru">{{ p.conta }}</span></td>
           <td>
             {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="cru">{{ p.pedido_id }}</a>
@@ -104,7 +145,14 @@
             {% else %}-{% endfor %}
           </td>
           <td><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
-          <td><span class="cru">{{ p.status_origem }}</span></td>
+          <td>
+            <span class="selo {{ p.envio_cor }}">{{ p.envio_rotulo }}</span>
+            {% if p.envio_id %}<br><span class="cru">{{ p.envio_id }}</span>{% endif %}
+          </td>
+          <td>
+            <span class="cru">{{ p.status_origem }}</span>
+            {% if p.envio_origem %}<br><span class="cru">{{ p.envio_origem }}</span>{% endif %}
+          </td>
           <td class="num">{{ p.valor_produtos|moeda }}</td>
           <td class="num">{{ p.frete|moeda }}</td>
           <td class="num"><b>{{ p.valor_total|moeda }}</b></td>
@@ -113,10 +161,10 @@
       </tbody>
     </table>
   </div>
-  <p class="sub" style="margin:12px 0 0">
-    A coluna <b>Status na plataforma</b> mostra o texto cru que a Shopee, o Mercado Livre ou o
-    TikTok devolveram. A coluna <b>Situação</b> é a tradução dele para o grupo usado no painel —
-    útil para conferir se alguma tradução ficou errada.
+  <p class="sub" style="margin:14px 0 0">
+    <b>Pagamento</b> e <b>Envio</b> são dimensões diferentes: um pedido pode estar pago
+    há dias e ainda não despachado. A coluna <b>Na plataforma</b> mostra o texto cru que
+    cada marketplace devolveu, para você conferir se alguma tradução ficou errada.
   </p>
 </div>
 {% else %}

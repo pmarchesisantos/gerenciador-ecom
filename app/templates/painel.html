@@ -7,35 +7,37 @@
 
 <h1>Painel de vendas</h1>
 <p class="sub">
-  Período de {{ periodo.inicio|dia }} a {{ periodo.fim|dia }} ({{ periodo.dias }} dia{{ 's' if periodo.dias > 1 }}),
-  somando todas as contas conectadas. Atualizado às {{ dados.atualizado_em.strftime('%H:%M') }}.
+  {{ periodo.inicio|dia }} a {{ periodo.fim|dia }} &middot; {{ periodo.dias }} dia{{ 's' if periodo.dias > 1 }}
+  &middot; atualizado às {{ dados.atualizado_em.strftime('%H:%M') }}
 </p>
 
+{# ---- filtros: uma linha só, acima de tudo que eles afetam ------------- #}
 <div class="cartao">
   <form class="filtros" method="get" action="/">
-    <label class="campo">De
-      <input type="date" name="inicio" value="{{ periodo.inicio }}">
-    </label>
-    <label class="campo">Até
-      <input type="date" name="fim" value="{{ periodo.fim }}">
-    </label>
+    <label class="campo">De <input type="date" name="inicio" value="{{ periodo.inicio }}"></label>
+    <label class="campo">Até <input type="date" name="fim" value="{{ periodo.fim }}"></label>
     {% if exemplo %}<input type="hidden" name="exemplo" value="1">{% endif %}
     <button class="botao" type="submit">Aplicar</button>
     <a class="botao neutro" href="/?{{ qp }}&atualizar=1{{ ex }}">Atualizar agora</a>
   </form>
-  <div class="atalhos" style="margin-top:12px">
-    {% set hoje = periodo.fim %}
+  <div class="atalhos" style="margin:14px 0 0">
+    {% set hoje = atalhos.hoje %}
     <a href="/?inicio={{ hoje }}&fim={{ hoje }}{{ ex }}">Hoje</a>
     <a href="/?inicio={{ atalhos.sete }}&fim={{ hoje }}{{ ex }}">7 dias</a>
     <a href="/?inicio={{ atalhos.trinta }}&fim={{ hoje }}{{ ex }}">30 dias</a>
     <a href="/?inicio={{ atalhos.mes }}&fim={{ hoje }}{{ ex }}">Mês atual</a>
-    {% if not exemplo %}<a href="/?{{ qp }}&exemplo=1">Ver com dados de exemplo</a>{% endif %}
   </div>
 </div>
 
-{# ---------------------------------------------------------- situacao ---- #}
+{# ---- lojas e erros ---------------------------------------------------- #}
 {% if not exemplo %}
-  {% if not contas %}
+  {% if not contas and not pode('dono') %}
+    <div class="cartao vazio">
+      <h3>Nenhuma loja atribuída ao seu acesso</h3>
+      <p>Seu login está ativo, mas ainda não foi incluído em nenhuma loja.<br>
+         Peça a quem é dono do sistema para liberar.</p>
+    </div>
+  {% elif not contas %}
     <div class="cartao vazio">
       <h3>Nenhuma loja conectada ainda</h3>
       <p>O painel fica vazio até a primeira loja ser autorizada.<br>
@@ -43,24 +45,25 @@
       <div class="acoes" style="justify-content:center">
         <a class="botao" href="/ajuda">Ver o caminho das chaves</a>
         <a class="botao vazio" href="/contas/nova?canal=mercadolivre">Cadastrar uma conta</a>
-        <a class="botao neutro" href="/?{{ qp }}&exemplo=1">Explorar com dados de exemplo</a>
       </div>
     </div>
   {% else %}
     <div class="cartao">
-      <h3>Lojas conectadas</h3>
+      <div class="cartao-cabeca">
+        <h3>Lojas conectadas</h3>
+        <p class="sub">{{ contas|length }} loja{{ 's' if contas|length != 1 }} somando neste painel.</p>
+      </div>
       <div class="rolagem">
         <table class="compacta">
           <thead><tr>
-            <th>Conta</th><th>Canal</th><th>Loja</th>
-            <th>Situação</th><th>Token vence</th><th></th>
+            <th>Conta</th><th>Canal</th><th>Loja</th><th>Situação</th><th>Token vence</th><th></th>
           </tr></thead>
           <tbody>
           {% for c in contas %}
             <tr>
               <td><a href="/contas/{{ c.id }}">{{ c.apelido }}</a></td>
               <td>{{ c.canal_rotulo }}</td>
-              <td>{{ c.loja_nome or '-' }}<br><span class="cru">{{ c.loja_id or '' }}</span></td>
+              <td>{{ c.loja_nome or '-' }} <span class="cru">{{ c.loja_id or '' }}</span></td>
               <td><span class="selo {{ c.situacao.cor }}">{{ c.situacao.rotulo }}</span></td>
               <td>{{ c.access_expira_em_dt|falta }}</td>
               <td class="num"><a class="botao pequeno neutro" href="/contas/{{ c.id }}">Detalhes</a></td>
@@ -77,7 +80,7 @@
   <div class="faixa erro">
     <strong>{{ dados.erros|length }} conta(s) não responderam</strong>
     <p>Os números abaixo estão incompletos — falta o que viria destas contas:</p>
-    <ul style="margin:8px 0 0">
+    <ul>
       {% for e in dados.erros %}
         <li><b>{{ canais_rotulo.get(e.canal, e.canal) }} / {{ e.conta }}</b>: {{ e.erro }}</li>
       {% endfor %}
@@ -85,150 +88,231 @@
   </div>
 {% endif %}
 
-{# ------------------------------------------------------------ grupos ---- #}
-<h2>Como estão os pedidos do período</h2>
-<p class="sub">Cada plataforma usa nomes próprios de status. Aqui tudo é traduzido para estes cinco grupos.</p>
+{% if dados.escopo_limitado and contas %}
+  <div class="faixa info">
+    <strong>Você está vendo {{ contas|length }} loja{{ 's' if contas|length != 1 }}</strong>
+    Estes números somam apenas as lojas atribuídas ao seu acesso.
+  </div>
+{% endif %}
 
-<div class="grade g5">
-  {% for g in grupos %}
-    {% set b = resumo.por_grupo[g] %}
-    <div class="indicador {{ cor_grupo[g] }}">
-      <div class="rotulo">{{ rotulo_grupo[g] }}</div>
-      <div class="valor">{{ b.quantidade|inteiro }}</div>
-      <div class="apoio">{{ b.valor|moeda }} &middot; {{ b.itens|inteiro }} itens</div>
-      <div class="nota">{{ explica_grupo[g] }}</div>
-    </div>
-  {% endfor %}
-</div>
-
-<h2>Resumo financeiro</h2>
-<div class="grade g5">
-  <div class="indicador verde">
+{# ---- hero + KPIs ------------------------------------------------------ #}
+<h2>Resumo do período</h2>
+<div class="kpis">
+  <div class="hero">
     <div class="rotulo">Faturamento</div>
-    <div class="valor">{{ resumo.faturamento|moeda }}</div>
-    <div class="apoio">só pedidos efetivados</div>
-    <div class="nota">Soma do que o comprador pagou, frete incluído. Não desconta comissão da plataforma.</div>
+    <div class="figura">{{ resumo.faturamento|moeda }}</div>
+    <div class="apoio">
+      {{ resumo.por_grupo.efetivada.quantidade|inteiro }} pedidos efetivados &middot;
+      {{ resumo.itens_vendidos|inteiro }} itens
+    </div>
+    <div class="apoio" style="margin-top:10px; color:var(--tinta-3); font-size:12px">
+      Soma do que o comprador pagou, frete incluído. Não desconta comissão da plataforma.
+    </div>
   </div>
-  <div class="indicador azul">
-    <div class="rotulo">Ticket médio</div>
-    <div class="valor">{{ resumo.ticket_medio|moeda }}</div>
-    <div class="apoio">por pedido efetivado</div>
-    <div class="nota">Faturamento dividido pela quantidade de pedidos efetivados.</div>
-  </div>
-  <div class="indicador azul">
-    <div class="rotulo">Itens vendidos</div>
-    <div class="valor">{{ resumo.itens_vendidos|inteiro }}</div>
-    <div class="apoio">unidades</div>
-    <div class="nota">Soma das quantidades de cada produto nos pedidos efetivados.</div>
-  </div>
-  <div class="indicador vermelho">
-    <div class="rotulo">Valor perdido</div>
-    <div class="valor">{{ resumo.valor_perdido|moeda }}</div>
-    <div class="apoio">cancelado + devolvido + estornado</div>
-    <div class="nota">Dinheiro que entrou na conta de pedidos mas não virou venda.</div>
-  </div>
-  <div class="indicador amarelo">
-    <div class="rotulo">Taxa de cancelamento</div>
-    <div class="valor">{{ resumo.taxa_cancelamento|pct }}</div>
-    <div class="apoio">dos pedidos já resolvidos</div>
-    <div class="nota">Cancelados ÷ (cancelados + efetivados). Pedidos ainda pendentes ficam de fora.</div>
+
+  <div class="tiles">
+    <div class="tile acento">
+      <div class="rotulo">Ticket médio</div>
+      <div class="valor">{{ resumo.ticket_medio|moeda }}</div>
+      <div class="apoio">por pedido efetivado</div>
+    </div>
+    <div class="tile neutro">
+      <div class="rotulo">Pedidos no período</div>
+      <div class="valor">{{ resumo.total_pedidos|inteiro }}</div>
+      <div class="apoio">em todas as situações</div>
+    </div>
+    <div class="tile warning">
+      <div class="rotulo">Aguardando</div>
+      <div class="valor">{{ resumo.por_grupo.pendente.quantidade|inteiro }}</div>
+      <div class="apoio">{{ resumo.pendente_valor|moeda }} em aberto</div>
+    </div>
+    <div class="tile critical">
+      <div class="rotulo">Valor perdido</div>
+      <div class="valor">{{ resumo.valor_perdido|moeda }}</div>
+      <div class="apoio">cancelado + devolvido + estornado</div>
+    </div>
+    <div class="tile serious">
+      <div class="rotulo">Taxa de cancelamento</div>
+      <div class="valor">{{ resumo.taxa_cancelamento|pct }}</div>
+      <div class="apoio">dos pedidos já resolvidos</div>
+    </div>
+    <div class="tile neutro">
+      <div class="rotulo">Frete cobrado</div>
+      <div class="valor">{{ resumo.frete_efetivado|moeda }}</div>
+      <div class="apoio">dentro do faturamento</div>
+    </div>
   </div>
 </div>
 
-{# ------------------------------------------------------------ canais ---- #}
-{% if resumo.canais %}
-<h2>Por canal</h2>
-<div class="cartao">
-  <div class="rolagem">
-    <table>
-      <thead><tr>
-        <th>Canal</th>
-        <th class="num">Pedidos</th>
-        <th class="num">Faturamento</th>
-        {% for g in grupos %}<th class="num">{{ rotulo_grupo[g] }}</th>{% endfor %}
-      </tr></thead>
-      <tbody>
-      {% for c in resumo.canais %}
-        <tr>
-          <td><b>{{ c.rotulo }}</b></td>
-          <td class="num">{{ c.total.quantidade|inteiro }}</td>
-          <td class="num">{{ c.grupos.efetivada.valor|moeda }}</td>
-          {% for g in grupos %}
-            <td class="num">
-              {% if g == 'efetivada' %}
-                {{ c.grupos[g].quantidade|inteiro }}
-              {% elif c.grupos[g].quantidade %}
-                {{ c.grupos[g].quantidade|inteiro }}
-                <span class="cru">{{ c.grupos[g].valor|moeda }}</span>
-              {% else %}
-                &mdash;
-              {% endif %}
-            </td>
-          {% endfor %}
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
+{# ---- situação e canal ------------------------------------------------- #}
+<div class="painel-2" style="margin-top:16px">
 
-{# -------------------------------------------------------------- dias ---- #}
-{% if resumo.dias %}
-<h2>Vendas efetivadas por dia</h2>
-<div class="cartao">
-  <div class="rolagem">
-    <table class="compacta">
-      <thead><tr><th>Dia</th><th class="num">Pedidos</th><th class="num">Valor</th><th style="width:40%">&nbsp;</th></tr></thead>
-      <tbody>
-      {% for d in resumo.dias %}
-        <tr>
-          <td>{{ d.dia|dia }}</td>
-          <td class="num">{{ d.quantidade|inteiro }}</td>
-          <td class="num">{{ d.valor|moeda }}</td>
-          <td>
-            <div class="barra">
-              <span style="width: {{ (d.valor / resumo.pico_dia * 100)|round(1) if resumo.pico_dia else 0 }}%"></span>
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Situação dos pedidos</h3>
+      <p class="sub">Cada plataforma usa nomes próprios. Aqui tudo vira estes cinco grupos.</p>
+    </div>
+    {% if resumo.total_pedidos %}
+      <div class="barras">
+        {% for b in graficos.grupos %}
+          <div class="barra-linha">
+            <div class="barra-nome">
+              <i class="ponto" style="background: {{ b.cor }}"></i>
+              <span class="texto">{{ b.rotulo }}</span>
             </div>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+            <div class="barra-valor">
+              <b>{{ b.quantidade|inteiro }}</b> &middot; {{ b.valor|moeda }}
+            </div>
+            <div class="barra-trilho">
+              <i style="width: {{ b.largura|round(1) }}%; background: {{ b.cor }}"></i>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="sub" style="margin:16px 0 0">
+        {{ explica_grupo['efetivada'] }}
+      </p>
+    {% else %}
+      <p class="sub" style="margin:0">Nenhum pedido no período.</p>
+    {% endif %}
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Faturamento por canal</h3>
+      <p class="sub">Só pedidos efetivados. A cor acompanha o canal, não a posição.</p>
+    </div>
+    {% if graficos.canais %}
+      <div class="barras">
+        {% for b in graficos.canais %}
+          <div class="barra-linha">
+            <div class="barra-nome">
+              <i class="ponto" style="background: {{ b.cor }}"></i>
+              <span class="texto">{{ b.rotulo }}</span>
+            </div>
+            <div class="barra-valor">
+              <b>{{ b.valor|moeda }}</b> &middot; {{ b.fatia|round(1) }}%
+            </div>
+            <div class="barra-trilho">
+              <i style="width: {{ b.fatia|round(1) }}%; background: {{ b.cor }}"></i>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="sub" style="margin:16px 0 0">
+        A porcentagem é a fatia do faturamento do período, não do total de pedidos.
+      </p>
+    {% else %}
+      <p class="sub" style="margin:0">Nenhuma venda efetivada no período.</p>
+    {% endif %}
   </div>
 </div>
-{% endif %}
 
-{# --------------------------------------------------------------- sku ---- #}
-{% if resumo.top_sku %}
-<h2>Produtos mais vendidos</h2>
+{# ---- série diária ----------------------------------------------------- #}
 <div class="cartao">
-  <div class="rolagem">
-    <table class="compacta">
-      <thead><tr><th>SKU</th><th>Produto</th><th class="num">Unidades</th><th class="num">Valor</th></tr></thead>
-      <tbody>
-      {% for s in resumo.top_sku %}
-        <tr>
-          <td class="cru">{{ s.sku }}</td>
-          <td>{{ s.titulo }}</td>
-          <td class="num">{{ s.itens|inteiro }}</td>
-          <td class="num">{{ s.valor|moeda }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  <div class="cartao-cabeca">
+    <h3>Vendas efetivadas por dia</h3>
+    <p class="sub">Valor faturado a cada dia do período. Passe o mouse para ver o dia.</p>
   </div>
-  <p class="sub" style="margin:12px 0 0">
-    O mesmo produto pode ter SKU diferente em cada plataforma — nesse caso ele aparece
-    em mais de uma linha. Unificar isso é o próximo passo natural do sistema.
-  </p>
+  {% if graficos.serie.rotulos %}
+    <div class="grafico"><canvas id="serie-dia"></canvas></div>
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer; font-size:13px; color:var(--tinta-2)">Ver como tabela</summary>
+      <div class="rolagem" style="margin-top:10px">
+        <table class="compacta">
+          <thead><tr><th>Dia</th><th class="num">Pedidos</th><th class="num">Valor</th></tr></thead>
+          <tbody>
+          {% for d in resumo.dias %}
+            <tr>
+              <td>{{ d.dia|dia }}</td>
+              <td class="num">{{ d.quantidade|inteiro }}</td>
+              <td class="num">{{ d.valor|moeda }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% else %}
+    <p class="sub" style="margin:0">Nenhuma venda efetivada no período.</p>
+  {% endif %}
 </div>
-{% endif %}
 
-{# ----------------------------------------------------------- ultimos ---- #}
+{# ---- produtos e canais ------------------------------------------------ #}
+<div class="painel-2">
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Produtos mais vendidos</h3>
+      <p class="sub">Por valor faturado, nos pedidos efetivados.</p>
+    </div>
+    {% if graficos.sku %}
+      <div class="barras">
+        {% for s in graficos.sku %}
+          <div class="barra-linha">
+            <div class="barra-nome">
+              <span class="texto" title="{{ s.titulo }}">{{ s.titulo }}</span>
+            </div>
+            <div class="barra-valor"><b>{{ s.valor|moeda }}</b> &middot; {{ s.itens|inteiro }} un</div>
+            <div class="barra-trilho">
+              <i style="width: {{ s.largura|round(1) }}%; background: var(--acento)"></i>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="sub" style="margin:16px 0 0">
+        O mesmo produto pode ter SKU diferente em cada plataforma — nesse caso ele
+        aparece mais de uma vez. Unificar isso é o próximo passo natural do sistema.
+      </p>
+    {% else %}
+      <p class="sub" style="margin:0">Nenhum item vendido no período.</p>
+    {% endif %}
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Resumo por canal</h3>
+      <p class="sub">Mesmos números das barras, em tabela — e com as situações abertas.</p>
+    </div>
+    {% if resumo.canais %}
+      <div class="rolagem">
+        <table class="compacta">
+          <thead><tr>
+            <th>Canal</th><th class="num">Pedidos</th><th class="num">Faturamento</th>
+            {% for g in grupos %}<th class="num">{{ rotulo_grupo[g] }}</th>{% endfor %}
+          </tr></thead>
+          <tbody>
+          {% for c in resumo.canais %}
+            <tr>
+              <td style="white-space:nowrap">
+                <i style="display:inline-block; width:9px; height:9px; border-radius:2px;
+                          background: {{ graficos.canais|selectattr('rotulo','equalto',c.rotulo)|map(attribute='cor')|first|default('#898781') }};
+                          margin-right:7px"></i>{{ c.rotulo }}
+              </td>
+              <td class="num">{{ c.total.quantidade|inteiro }}</td>
+              <td class="num"><b>{{ c.grupos.efetivada.valor|moeda }}</b></td>
+              {% for g in grupos %}
+                <td class="num">
+                  {% if c.grupos[g].quantidade %}{{ c.grupos[g].quantidade|inteiro }}{% else %}&mdash;{% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="sub" style="margin:0">Sem dados no período.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ---- últimos pedidos -------------------------------------------------- #}
 {% if ultimos %}
-<h2>Últimos pedidos</h2>
 <div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Últimos pedidos</h3>
+    <p class="sub">Os 10 mais recentes do período.</p>
+  </div>
   <div class="rolagem">
     <table class="compacta">
       <thead><tr>
@@ -249,8 +333,10 @@
       </tbody>
     </table>
   </div>
-  <div class="acoes" style="margin-top:12px">
-    <a class="botao vazio" href="/pedidos?{{ qp }}{{ ex }}">Ver todos os {{ resumo.total_pedidos|inteiro }} pedidos</a>
+  <div class="acoes" style="margin-top:14px">
+    <a class="botao vazio" href="/pedidos?{{ qp }}{{ ex }}">
+      Ver todos os {{ resumo.total_pedidos|inteiro }} pedidos
+    </a>
   </div>
 </div>
 {% elif dados.houve_consulta %}
@@ -259,6 +345,103 @@
     <p>As contas responderam, só não havia pedido criado entre
        {{ periodo.inicio|dia }} e {{ periodo.fim|dia }}.</p>
   </div>
+{% endif %}
+
+{% if graficos.serie.rotulos %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+  (function () {
+    var d = {{ graficos.serie|tojson }};
+    var el = document.getElementById('serie-dia');
+    if (!el || !window.Chart) return;
+
+    var brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    // eixo usa forma curta (R$ 1,4 mil); o tooltip mantém o valor exato
+    var curto = new Intl.NumberFormat('pt-BR', {
+      style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1
+    });
+
+    // as cores saem do CSS, nunca do servidor: é assim que o gráfico
+    // acompanha a troca de tema sem recarregar a página
+    function cor(nome) {
+      return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+    }
+
+    var grafico = new Chart(el, {
+      type: 'line',
+      data: {
+        labels: d.rotulos,
+        datasets: [{
+          label: 'Faturamento',
+          data: d.valores,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.3,
+          pointRadius: d.rotulos.length > 45 ? 0 : 3,
+          pointHoverRadius: 5,
+          pointBorderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            padding: 11,
+            displayColors: false,
+            callbacks: {
+              title: function (ctx) { return 'Dia ' + ctx[0].label; },
+              label: function (ctx) {
+                var n = d.pedidos[ctx.dataIndex] || 0;
+                return [brl.format(ctx.parsed.y),
+                        n + (n === 1 ? ' pedido' : ' pedidos')];
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkipPadding: 16 } },
+          y: {
+            beginAtZero: true,
+            grid: { drawTicks: false },
+            border: { display: false },
+            ticks: {
+              font: { size: 11 }, padding: 8,
+              callback: function (v) { return curto.format(v); }
+            }
+          }
+        }
+      }
+    });
+
+    function pintar() {
+      var serie = cor('--serie');
+      var dataset = grafico.data.datasets[0];
+      dataset.borderColor = serie;
+      dataset.backgroundColor = cor('--serie-suave');
+      dataset.pointBackgroundColor = serie;
+      dataset.pointBorderColor = cor('--papel');
+
+      var grade = cor('--grade');
+      var tinta = cor('--tinta-3');
+      grafico.options.scales.x.border = { color: grade };
+      grafico.options.scales.x.ticks.color = tinta;
+      grafico.options.scales.y.grid.color = grade;
+      grafico.options.scales.y.ticks.color = tinta;
+      grafico.options.plugins.tooltip.backgroundColor = cor('--lateral-fundo');
+      grafico.update('none');
+    }
+
+    pintar();
+    document.addEventListener('tema-trocado', pintar);
+    window.matchMedia('(prefers-color-scheme: dark)')
+      .addEventListener('change', function () {
+        if (!document.documentElement.dataset.tema) pintar();
+      });
+  })();
+</script>
 {% endif %}
 
 {% endblock %}

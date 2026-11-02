@@ -68,6 +68,15 @@ class CanalBase(ABC):
     async def listar_pedidos(self, conta: dict, inicio: date, fim: date) -> list[Pedido]:
         """Pedidos criados no periodo, ja normalizados."""
 
+    async def enriquecer_envio(self, conta: dict, pedidos: list) -> None:
+        """Preenche o estado do envio, quando isso custa chamadas extras.
+
+        Shopee e TikTok ja dizem o envio no proprio status do pedido, entao
+        nao precisam de nada aqui. O Mercado Livre guarda o envio em outro
+        recurso, e so ele implementa este metodo.
+        """
+        return None
+
     # ---------------- utilidades ----------------
     @staticmethod
     def _quando(valor) -> datetime:

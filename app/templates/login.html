@@ -2,67 +2,100 @@
 {% block titulo %}Entrar - Sistema-Ecom{% endblock %}
 
 {% block conteudo %}
-<div style="max-width:460px; margin:40px auto 0">
+<div class="entrada-tela">
 
-  <h1 style="text-align:center">Sistema-Ecom</h1>
-  <p class="sub" style="text-align:center">
-    {% if primeiro %}
-      Ninguém tem acesso ainda. Crie o primeiro usuário — ele será o dono do sistema.
-    {% else %}
-      Entre para ver o painel de vendas.
-    {% endif %}
-  </p>
-
-  {% if primeiro %}
-    <div class="cartao">
-      <h3>Criar o primeiro acesso</h3>
-      <p class="sub" style="margin-top:0">
-        Este usuário nasce como <b>dono</b>: é ele que depois cadastra as lojas e
-        libera o acesso das outras pessoas. Esta tela deixa de existir assim que
-        o primeiro acesso for criado.
-      </p>
-      <form method="post" action="/primeiro-acesso">
-        <label class="campo" style="margin-bottom:12px">
-          Seu nome
-          <input type="text" name="nome" style="min-width:100%" placeholder="opcional">
-        </label>
-        <label class="campo" style="margin-bottom:12px">
-          E-mail
-          <input type="text" name="email" required style="min-width:100%" autocomplete="username">
-        </label>
-        <label class="campo" style="margin-bottom:16px">
-          Senha
-          <input type="password" name="senha" required minlength="8" style="min-width:100%"
-                 autocomplete="new-password">
-          <span class="sub" style="font-weight:400; margin:0">Mínimo de 8 caracteres.</span>
-        </label>
-        <button class="botao" type="submit" style="width:100%">Criar acesso e entrar</button>
-      </form>
+  {# ------------------------------------------------------- lado da marca #}
+  <section class="entrada-arte">
+    <div class="marca">
+      <span class="marca-sigla">SE</span>
+      <span>Sistema-Ecom</span>
     </div>
-  {% else %}
-    <div class="cartao">
-      <form method="post" action="/entrar">
-        <input type="hidden" name="proximo" value="{{ proximo }}">
-        <label class="campo" style="margin-bottom:12px">
-          E-mail
-          <input type="text" name="email" required style="min-width:100%"
-                 autocomplete="username" autofocus>
-        </label>
-        <label class="campo" style="margin-bottom:16px">
-          Senha
-          <input type="password" name="senha" required style="min-width:100%"
-                 autocomplete="current-password">
-        </label>
-        <button class="botao" type="submit" style="width:100%">Entrar</button>
-      </form>
-      <p class="sub" style="margin:14px 0 0; text-align:center">
-        Esqueceu a senha? Quem é dono do sistema pode trocá-la em Usuários.
-      </p>
-    </div>
-  {% endif %}
 
-  <p class="sub" style="text-align:center">
-    Problema para entrar? Veja o <a href="/saude">diagnóstico</a>.
-  </p>
+    <div class="chamada">
+      <h2>Suas vendas dos três marketplaces em uma tela só.</h2>
+      <p>
+        Mercado Livre, Shopee e TikTok Shop consultados ao vivo, com os status
+        de cada um traduzidos para a mesma linguagem.
+      </p>
+      <ul>
+        <li>
+          <span class="bolinha"><i style="background: var(--good)"></i></span>
+          <span>Faturamento, ticket médio e itens vendidos somados entre as lojas</span>
+        </li>
+        <li>
+          <span class="bolinha"><i style="background: var(--warning)"></i></span>
+          <span>Cancelados, devoluções e estornos separados do que de fato vendeu</span>
+        </li>
+        <li>
+          <span class="bolinha"><i style="background: var(--canal-tiktok)"></i></span>
+          <span>Fila de pedidos pagos esperando despacho, de todos os canais juntos</span>
+        </li>
+      </ul>
+    </div>
+
+    <p class="assinatura">
+      Consulta ao vivo nas plataformas. No banco guardamos apenas as credenciais de acesso.
+    </p>
+  </section>
+
+  {# ---------------------------------------------------- lado do formulário #}
+  <section class="entrada-form">
+    <div class="caixa">
+
+      <div class="entrada-topo">
+        <button class="tema-botao" type="button" data-tema-botao
+                aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+          <span class="icone-sol">{{ icone('sol') }}</span>
+          <span class="icone-lua">{{ icone('lua') }}</span>
+        </button>
+      </div>
+
+      {% if primeiro %}
+        <h1>Criar o primeiro acesso</h1>
+        <p class="sub">
+          Ninguém tem acesso ainda. Este usuário nasce como <b>dono</b>: é ele que
+          depois cadastra as lojas e libera o acesso das outras pessoas.
+        </p>
+        <form method="post" action="/primeiro-acesso">
+          <label class="campo" style="margin-bottom:14px">
+            Seu nome
+            <input type="text" name="nome" placeholder="opcional">
+          </label>
+          <label class="campo" style="margin-bottom:14px">
+            E-mail
+            <input type="text" name="email" required autocomplete="username" autofocus>
+          </label>
+          <label class="campo" style="margin-bottom:18px">
+            Senha
+            <input type="password" name="senha" required minlength="8"
+                   autocomplete="new-password">
+            <span class="sub" style="margin:0; font-weight:400; text-transform:none">
+              Mínimo de 8 caracteres. Guarde bem: não há recuperação automática.
+            </span>
+          </label>
+          <button class="botao" type="submit">Criar acesso e entrar</button>
+        </form>
+      {% else %}
+        <h1>Entrar</h1>
+        <p class="sub">Acesse o painel de vendas da sua operação.</p>
+        <form method="post" action="/entrar">
+          <input type="hidden" name="proximo" value="{{ proximo }}">
+          <label class="campo" style="margin-bottom:14px">
+            E-mail
+            <input type="text" name="email" required autocomplete="username" autofocus>
+          </label>
+          <label class="campo" style="margin-bottom:18px">
+            Senha
+            <input type="password" name="senha" required autocomplete="current-password">
+          </label>
+          <button class="botao" type="submit">Entrar</button>
+        </form>
+        <p class="sub" style="margin:20px 0 0; text-align:center">
+          Esqueceu a senha? Quem é dono do sistema pode trocá-la em Usuários.
+        </p>
+      {% endif %}
+
+    </div>
+  </section>
 </div>
 {% endblock %}

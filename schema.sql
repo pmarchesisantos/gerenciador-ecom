@@ -127,3 +127,57 @@ alter table public.contas add column if not exists criada_por uuid;
 -- Mesma política das outras tabelas: RLS ligada e nenhuma policy, então a
 -- chave anon não lê nada. Quem acessa é o app, com a service_role.
 alter table public.perfis enable row level security;
+
+
+-- ---------------------------------------------------------------------------
+-- Permissoes.
+--
+-- A RLS acima bloqueia quem chega pela chave publica. Estes GRANTs sao a
+-- outra metade: liberam o acesso para o papel service_role, que e o que o
+-- app usa no servidor. Sem eles o Postgres recusa com
+-- "permission denied for table contas", mesmo a chave estando correta.
+--
+-- De proposito NAO concedemos nada a anon nem a authenticated: ninguem
+-- alcanca estas tabelas pelo navegador.
+-- ---------------------------------------------------------------------------
+grant usage on schema public to service_role;
+
+grant all privileges on public.contas        to service_role;
+grant all privileges on public.oauth_estados to service_role;
+grant all privileges on public.eventos       to service_role;
+grant all privileges on public.perfis        to service_role;
+
+-- eventos.id e bigserial: sem a sequencia o insert falha
+grant usage, select on all sequences in schema public to service_role;
+
+-- vale tambem para o que for criado daqui para frente
+alter default privileges in schema public
+    grant all on tables to service_role;
+alter default privileges in schema public
+    grant usage, select on sequences to service_role;
+
+
+-- ---------------------------------------------------------------------------
+-- conta_acessos: quem enxerga qual loja.
+--
+-- Quem e dono ve todas as lojas e nao precisa de linha aqui. Para operador e
+-- leitor vale o contrario: so enxergam as lojas em que foram incluidos. Sem
+-- nenhuma linha, a pessoa entra e ve o painel vazio.
+--
+-- E uma tabela de ligacao (e nao uma coluna dono_id em contas) para permitir
+-- duas situacoes que aparecem na pratica: duas pessoas cuidando da mesma loja,
+-- e uma pessoa cuidando de duas lojas.
+-- ---------------------------------------------------------------------------
+create table if not exists public.conta_acessos (
+    conta_id   uuid not null references public.contas (id) on delete cascade,
+    usuario_id uuid not null references public.perfis (id) on delete cascade,
+    criado_em  timestamptz not null default now(),
+    primary key (conta_id, usuario_id)
+);
+
+create index if not exists conta_acessos_usuario_idx
+    on public.conta_acessos (usuario_id);
+
+alter table public.conta_acessos enable row level security;
+
+grant all privileges on public.conta_acessos to service_role;

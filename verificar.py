@@ -56,14 +56,13 @@ def logar(c: TestClient, papel: str = "dono") -> None:
 # ---------------------------------------------------------------------------
 def portaria(c: TestClient) -> None:
     print("portaria (sem login):")
-    for rota in ("/", "/pedidos", "/contas", "/usuarios", "/ajuda"):
+    for rota in ("/", "/pedidos", "/contas", "/usuarios", "/ajuda", "/saude"):
         r = c.get(rota, follow_redirects=False)
         ok = r.status_code == 303 and "/entrar" in r.headers.get("location", "")
         checar(f"{rota} exige login", ok, f"HTTP {r.status_code}")
 
-    for rota in ("/entrar", "/saude"):
-        r = c.get(rota)
-        checar(f"{rota} fica aberta", r.status_code == 200, f"HTTP {r.status_code}")
+    r = c.get("/entrar")
+    checar("/entrar fica aberta", r.status_code == 200, f"HTTP {r.status_code}")
 
     r = c.get("/static/estilo.css")
     checar("/static fica aberto", r.status_code == 200)
@@ -109,12 +108,63 @@ def permissoes(c: TestClient) -> None:
     r = c.get("/usuarios", follow_redirects=False)
     checar("operador nao entra em usuarios", r.status_code == 303)
 
+    for rota in ("/ajuda", "/saude"):
+        r = c.get(rota, follow_redirects=False)
+        checar(f"operador nao entra em {rota}", r.status_code == 303,
+               f"HTTP {r.status_code}")
+
+    logar(c, "leitor")
+    r = c.get("/")
+    checar("leitor nao ve os links de dono no menu",
+           "/usuarios" not in r.text and "/saude" not in r.text
+           and "/ajuda" not in r.text)
+
     logar(c, "dono")
     r = c.get("/usuarios")
     checar("dono entra em usuarios", r.status_code == 200)
 
     r = c.get("/contas/nova?canal=shopee")
     checar("dono cadastra conta", r.status_code == 200)
+
+    for rota in ("/ajuda", "/saude"):
+        r = c.get(rota)
+        checar(f"dono entra em {rota}", r.status_code == 200)
+
+
+def escopo(c: TestClient) -> None:
+    print("visibilidade por loja:")
+    from app.servicos.contas import filtrar_visiveis
+
+    linhas = [{"id": "a"}, {"id": "b"}, {"id": "c"}]
+    checar("dono ve todas", filtrar_visiveis(linhas, None) == linhas)
+    checar("sem nenhuma atribuida, ve zero", filtrar_visiveis(linhas, set()) == [])
+    checar("ve so as atribuidas",
+           [x["id"] for x in filtrar_visiveis(linhas, {"a", "c"})] == ["a", "c"])
+
+    logar(c, "leitor")
+    r = c.get("/contas")
+    # o que importa e que nenhuma loja aparece, seja por escopo vazio ou por
+    # erro de infraestrutura: em nenhum caso o leitor pode ver credenciais
+    checar("leitor nao ve credencial de loja",
+           r.status_code == 200 and "Secret Key" not in r.text
+           and "Token de acesso vence" not in r.text)
+    checar("leitor nao ve o bloco de atribuicao",
+           "Quem enxerga esta loja" not in r.text)
+
+    r = c.post("/contas/00000000-0000-0000-0000-000000000000/acessos",
+               data={"usuario_id": "x"}, follow_redirects=False)
+    checar("leitor nao altera quem enxerga", r.status_code == 303)
+
+    r = c.get("/contas/00000000-0000-0000-0000-000000000000")
+    checar("leitor nao abre loja de fora do escopo",
+           "Credenciais guardadas" not in r.text)
+
+    logar(c, "operador")
+    r = c.post("/contas/00000000-0000-0000-0000-000000000000/acessos",
+               data={"usuario_id": "x"}, follow_redirects=False)
+    checar("operador nao altera quem enxerga", r.status_code == 303)
+
+    logar(c, "dono")
 
 
 def filtros(c: TestClient) -> None:
@@ -216,6 +266,98 @@ def agregacao() -> None:
            len(servico_consulta.filtrar(pedidos, grupo=ESTORNADA)) > 0)
 
 
+def dashboard(c: TestClient) -> None:
+    print("dashboard:")
+    logar(c, "dono")
+    r = c.get("/?exemplo=1")
+    t = r.text
+    checar("hero com o faturamento", 'class="figura"' in t and "R$" in t)
+    checar("barras de situacao", t.count('class="barra-trilho"') >= 5)
+    checar("grafico diario presente", 'id="serie-dia"' in t and "chart.umd.min.js" in t)
+    checar("tabela-espelho do grafico", "Ver como tabela" in t)
+
+    from app.cores import CANAL_COR, GRUPO_COR
+    checar("cada canal tem token proprio",
+           all(c.startswith("var(--") for c in CANAL_COR.values())
+           and len(set(CANAL_COR.values())) == 3)
+    checar("status nao reutiliza token de canal",
+           not (set(GRUPO_COR.values()) & set(CANAL_COR.values())))
+    for canal_nome, token in CANAL_COR.items():
+        checar(f"{canal_nome} usa {token}", token in t or canal_nome not in t)
+
+    r = c.get("/")
+    checar("painel real tambem renderiza", r.status_code == 200)
+
+
+def envios(c: TestClient) -> None:
+    print("dimensao de envio:")
+    logar(c, "dono")
+
+    r = c.get("/pedidos", params={"exemplo": 1})
+    checar("coluna de envio aparece", "Envio" in r.text and "A enviar" in r.text)
+
+    r = c.get("/pedidos", params={"exemplo": 1, "envio": "a_enviar"})
+    checar("filtro a_enviar responde", r.status_code == 200)
+    checar("explica o que e a fila",
+           "esperando despacho" in r.text.lower())
+
+    from app.modelos import (
+        CANCELADA, EFETIVADA, ENVIO_A_ENVIAR, ENVIO_NAO_APLICA, PENDENTE,
+    )
+    from app.servicos import exemplo as ex
+
+    pedidos = ex.pedidos(date(2026, 9, 1), date(2026, 9, 30))
+
+    checar("pedido nao pago nao entra na fila de envio",
+           all(p.envio == ENVIO_NAO_APLICA
+               for p in pedidos if p.grupo in (PENDENTE, CANCELADA)))
+    checar("so pedido efetivado fica a enviar",
+           all(p.grupo == EFETIVADA
+               for p in pedidos if p.envio == ENVIO_A_ENVIAR))
+
+    fila = servico_consulta.filtrar(pedidos, envio=ENVIO_A_ENVIAR)
+    checar("filtrar por envio", all(p.envio == ENVIO_A_ENVIAR for p in fila),
+           f"{len(fila)} a enviar")
+
+    contagem = servico_consulta.contar_envios(pedidos)
+    checar("contagem fecha com o total",
+           sum(contagem.values()) == len(pedidos))
+
+    # pagamento e envio sao independentes: filtrar um nao mexe no outro
+    efetivados = servico_consulta.filtrar(pedidos, grupo=EFETIVADA)
+    checar("efetivado tem envio em varias etapas",
+           len({p.envio for p in efetivados}) > 1,
+           ", ".join(sorted({p.envio for p in efetivados})))
+
+
+def tema(c: TestClient) -> None:
+    print("tema claro/escuro:")
+    logar(c, "dono")
+    r = c.get("/")
+    t = r.text
+    checar("tema entra antes da pintura", "localStorage.getItem('tema')" in t)
+    checar("botao de tema na lateral", "data-tema-botao" in t)
+    checar("grafico avisado da troca", "tema-trocado" in t)
+
+    r = c.get("/entrar", headers={"cookie": ""})
+    checar("botao de tema tambem na entrada", "data-tema-botao" in r.text)
+
+    css = c.get("/static/estilo.css").text
+    checar("tema escuro por preferencia do sistema",
+           "prefers-color-scheme: dark" in css)
+    checar("escolha explicita vence o sistema",
+           ':root[data-tema="escuro"]' in css and ':not([data-tema="claro"])' in css)
+
+    for token in ("--canal-mercadolivre", "--canal-shopee", "--canal-tiktok",
+                  "--serie", "--grade", "--papel"):
+        # cada token precisa existir nos dois temas, nao so no claro
+        checar(f"{token} definido nos dois temas", css.count(token + ":") >= 3,
+               f"{css.count(token + ':')} definicoes")
+
+    checar("grafico nao recebe hex do servidor",
+           "#2a78d6" not in t and "borderColor: d." not in t)
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -224,6 +366,10 @@ def main() -> int:
         filtros(c)
         rotas_de_escrita(c)
         permissoes(c)
+        escopo(c)
+        dashboard(c)
+        envios(c)
+        tema(c)
     canais()
     cripto()
     agregacao()

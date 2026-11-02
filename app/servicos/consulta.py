@@ -38,9 +38,13 @@ def limpar_cache() -> None:
     _cache.clear()
 
 
-async def _consultar_conta(linha: dict, inicio: date, fim: date, forcar: bool) -> ResultadoCanal:
+async def _consultar_conta(
+    linha: dict, inicio: date, fim: date, forcar: bool, com_envio: bool
+) -> ResultadoCanal:
     apelido = linha.get("apelido", "?")
-    chave = (linha["id"], inicio.isoformat(), fim.isoformat())
+    # com_envio entra na chave: a versao enriquecida custa chamadas extras,
+    # entao as duas sao guardadas em separado
+    chave = (linha["id"], inicio.isoformat(), fim.isoformat(), com_envio)
 
     if not forcar and chave in _cache:
         quando, pedidos = _cache[chave]
@@ -49,7 +53,10 @@ async def _consultar_conta(linha: dict, inicio: date, fim: date, forcar: bool) -
 
     try:
         conta = await servico_contas.garantir_token(linha)
-        pedidos = await canal(linha["canal"]).listar_pedidos(conta, inicio, fim)
+        c = canal(linha["canal"])
+        pedidos = await c.listar_pedidos(conta, inicio, fim)
+        if com_envio:
+            await c.enriquecer_envio(conta, pedidos)
     except Exception as e:
         return ResultadoCanal(linha["canal"], apelido, False, [], str(e))
 
@@ -58,10 +65,22 @@ async def _consultar_conta(linha: dict, inicio: date, fim: date, forcar: bool) -
 
 
 async def consultar(
-    inicio: date, fim: date, canais: list[str] | None = None, forcar: bool = False
+    inicio: date,
+    fim: date,
+    canais: list[str] | None = None,
+    forcar: bool = False,
+    usuario: dict | None = None,
+    com_envio: bool = False,
 ) -> dict:
-    """Consulta todas as contas ativas em paralelo."""
+    """Consulta em paralelo as contas ativas que o usuario pode ver."""
     linhas = [c for c in await servico_contas.listar() if c.get("ativa")]
+
+    # dono ve todas; os demais, so as lojas atribuidas a eles
+    permitidos = await servico_contas.ids_visiveis(usuario)
+    total_existentes = len(linhas)
+    linhas = servico_contas.filtrar_visiveis(linhas, permitidos)
+    escondidas = total_existentes - len(linhas)
+
     if canais:
         linhas = [c for c in linhas if c["canal"] in canais]
 
@@ -72,7 +91,10 @@ async def consultar(
     if conectadas:
         resultados = list(
             await asyncio.gather(
-                *(_consultar_conta(c, inicio, fim, forcar) for c in conectadas)
+                *(
+                    _consultar_conta(c, inicio, fim, forcar, com_envio)
+                    for c in conectadas
+                )
             )
         )
     for c in pendentes:
@@ -93,6 +115,9 @@ async def consultar(
         "erros": [r for r in resultados if not r.ok],
         "houve_consulta": bool(conectadas),
         "atualizado_em": datetime.now(tz=FUSO),
+        "escopo_limitado": permitidos is not None,
+        "lojas_escondidas": escondidas,
+        "lojas_visiveis": len(linhas),
     }
 
 
@@ -180,17 +205,27 @@ def resumir(pedidos: list[Pedido]) -> dict:
     }
 
 
+def contar_envios(pedidos: list[Pedido]) -> dict[str, int]:
+    saida: dict[str, int] = {}
+    for p in pedidos:
+        saida[p.envio] = saida.get(p.envio, 0) + 1
+    return saida
+
+
 def filtrar(
     pedidos: list[Pedido],
     canal_nome: str = "",
     grupo: str = "",
     busca: str = "",
+    envio: str = "",
 ) -> list[Pedido]:
     saida = pedidos
     if canal_nome:
         saida = [p for p in saida if p.canal == canal_nome]
     if grupo:
         saida = [p for p in saida if p.grupo == grupo]
+    if envio:
+        saida = [p for p in saida if p.envio == envio]
     if busca:
         t = busca.strip().lower()
         saida = [

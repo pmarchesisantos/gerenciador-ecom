@@ -4,35 +4,115 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Sistema-Ecom{% endblock %}</title>
-  <link rel="stylesheet" href="/static/estilo.css">
+  <link rel="stylesheet" href="/static/estilo.css?v={{ estilo_versao }}">
+  <script>
+    // menu e tema entram antes da primeira pintura, para não piscar
+    try {
+      if (localStorage.getItem('lateral') === 'fechada') {
+        document.documentElement.dataset.lateral = 'fechada';
+      }
+      var t = localStorage.getItem('tema');
+      if (t === 'claro' || t === 'escuro') {
+        document.documentElement.dataset.tema = t;
+      }
+    } catch (e) {}
+  </script>
 </head>
-<body>
+<body class="{{ 'sem-lateral' if not usuario }}">
 
-<header class="topo">
-  <div class="linha">
-    <span class="marca">Sistema-Ecom</span>
-    {% if usuario %}
-      {% set rota = request.url.path %}
-      <nav>
-        <a href="/" class="{{ 'ativo' if rota == '/' }}">Painel</a>
-        <a href="/pedidos" class="{{ 'ativo' if rota == '/pedidos' }}">Pedidos</a>
-        <a href="/contas" class="{{ 'ativo' if rota.startswith('/contas') }}">Contas</a>
-        {% if pode('dono') %}
-          <a href="/usuarios" class="{{ 'ativo' if rota.startswith('/usuarios') }}">Usuários</a>
-        {% endif %}
-        <a href="/ajuda" class="{{ 'ativo' if rota == '/ajuda' }}">Como gerar as chaves</a>
-        <a href="/saude" class="{{ 'ativo' if rota == '/saude' }}">Diagnóstico</a>
+{% macro icone(nome) -%}
+<svg class="icone" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if nome == 'painel' -%}
+    <path d="M3 13.5h5V21H3zM9.5 3h5v18h-5zM16 9h5v12h-5z"/>
+  {%- elif nome == 'pedidos' -%}
+    <path d="M4 4h10l6 6v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>
+    <path d="M14 4v6h6M8 14h7M8 17.5h5"/>
+  {%- elif nome == 'contas' -%}
+    <path d="M3 9.5 5 4h14l2 5.5M3 9.5h18M3 9.5v10a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-10"/>
+    <path d="M9 20.5v-6h6v6"/>
+  {%- elif nome == 'usuarios' -%}
+    <circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-5.5 6-5.5s6 2.1 6 5.5"/>
+    <path d="M16 5.2a3.2 3.2 0 0 1 0 6M17.5 14.9c2.1.6 3.5 2.3 3.5 5.1"/>
+  {%- elif nome == 'ajuda' -%}
+    <circle cx="12" cy="12" r="9"/>
+    <path d="M9.6 9.3a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.8-.9 1.4v.4M12 17h.01"/>
+  {%- elif nome == 'saude' -%}
+    <path d="M3 12h4l2.5-7 4 14L16 12h5"/>
+  {%- elif nome == 'menu' -%}
+    <path d="M4 6h16M4 12h16M4 18h16"/>
+  {%- elif nome == 'sol' -%}
+    <circle cx="12" cy="12" r="4"/>
+    <path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/>
+  {%- elif nome == 'lua' -%}
+    <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/>
+  {%- elif nome == 'sair' -%}
+    <path d="M15 17l5-5-5-5M20 12H9M11 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h6"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% if usuario %}
+{% set rota = request.url.path %}
+<aside class="lateral">
+  <div class="lateral-topo">
+    <span class="marca">
+      <span class="marca-sigla">SE</span>
+      <span class="so-aberta">Sistema-Ecom</span>
+    </span>
+    <button class="alternar" type="button" id="alternar-lateral"
+            aria-label="Abrir ou fechar o menu">{{ icone('menu') }}</button>
+  </div>
+
+  <nav class="lateral-nav">
+    <a href="/" class="{{ 'ativo' if rota == '/' }}" title="Painel">
+      {{ icone('painel') }}<span class="so-aberta">Painel</span>
+    </a>
+    <a href="/pedidos" class="{{ 'ativo' if rota == '/pedidos' }}" title="Pedidos">
+      {{ icone('pedidos') }}<span class="so-aberta">Pedidos</span>
+    </a>
+    <a href="/contas" class="{{ 'ativo' if rota.startswith('/contas') }}" title="Contas">
+      {{ icone('contas') }}<span class="so-aberta">Contas</span>
+    </a>
+    {% if pode('dono') %}
+      <a href="/usuarios" class="{{ 'ativo' if rota.startswith('/usuarios') }}" title="Usuários">
+        {{ icone('usuarios') }}<span class="so-aberta">Usuários</span>
+      </a>
+    {% endif %}
+  </nav>
+
+  <div class="lateral-pe">
+    {% if pode('dono') %}
+      <nav class="lateral-nav secundaria">
+        <a href="/ajuda" class="{{ 'ativo' if rota == '/ajuda' }}" title="Chaves das plataformas">
+          {{ icone('ajuda') }}<span class="so-aberta">Chaves</span>
+        </a>
+        <a href="/saude" class="{{ 'ativo' if rota == '/saude' }}" title="Diagnóstico">
+          {{ icone('saude') }}<span class="so-aberta">Diagnóstico</span>
+        </a>
       </nav>
-      <div class="eu">
-        <span>{{ usuario.nome }}</span>
+    {% endif %}
+    <div class="tema">
+      <span class="so-aberta" id="tema-rotulo">Tema</span>
+      <button class="tema-botao" type="button" data-tema-botao
+              aria-label="Alternar entre tema claro e escuro" title="Alternar tema">
+        <span class="icone-sol">{{ icone('sol') }}</span>
+        <span class="icone-lua">{{ icone('lua') }}</span>
+      </button>
+    </div>
+    <div class="eu">
+      <span class="avatar">{{ usuario.nome[0]|upper }}</span>
+      <span class="eu-dados so-aberta">
+        <b>{{ usuario.nome }}</b>
         <span class="selo {{ 'azul' if usuario.papel == 'dono' else 'cinza' }}">
           {{ rotulo_papel[usuario.papel] }}
         </span>
-        <a href="/sair">Sair</a>
-      </div>
-    {% endif %}
+      </span>
+      <a href="/sair" class="sair" title="Sair">{{ icone('sair') }}</a>
+    </div>
   </div>
-</header>
+</aside>
+{% endif %}
 
 <main>
   {% if aviso %}<div class="faixa ok">{{ aviso }}</div>{% endif %}
@@ -41,10 +121,8 @@
   {% if criticos %}
     <div class="faixa erro">
       <strong>Configuração incompleta para produção</strong>
-      <ul style="margin:8px 0 0">
-        {% for c in criticos %}<li>{{ c }}</li>{% endfor %}
-      </ul>
-      <p>Veja o <a href="/saude">diagnóstico</a> para os detalhes.</p>
+      <ul>{% for c in criticos %}<li>{{ c }}</li>{% endfor %}</ul>
+      {% if pode('dono') %}<p>Veja o <a href="/saude">diagnóstico</a> para os detalhes.</p>{% endif %}
     </div>
   {% endif %}
 
@@ -52,32 +130,73 @@
     <div class="faixa atencao">
       <strong>Supabase ainda não configurado</strong>
       Preencha <code class="inline-cod">SUPABASE_URL</code> e
-      <code class="inline-cod">SUPABASE_SERVICE_KEY</code> no arquivo <code class="inline-cod">.env</code>.
-      O <a href="/saude">diagnóstico</a> mostra o que falta{% if usuario %}, e o painel aceita
-      <a href="{{ request.url.path }}?exemplo=1">dados de exemplo</a> enquanto isso{% endif %}.
+      <code class="inline-cod">SUPABASE_SERVICE_KEY</code> nas variáveis de ambiente.
+      {% if pode('dono') %}O <a href="/saude">diagnóstico</a> mostra o que falta.{% endif %}
     </div>
   {% elif erro_infra %}
     <div class="faixa erro">
       <strong>Problema ao falar com o Supabase</strong>
       {{ erro_infra }}
-      <p>Confira o <a href="/saude">diagnóstico</a>.</p>
+      {% if pode('dono') %}<p>Confira o <a href="/saude">diagnóstico</a>.</p>{% endif %}
     </div>
   {% endif %}
 
   {% if exemplo is defined and exemplo %}
     <div class="faixa atencao">
       <strong>Você está vendo dados de exemplo</strong>
-      Nada aqui é real — serve só para conhecer o painel antes de conectar as lojas.
-      <a href="{{ request.url.path }}">Ver dados reais</a>.
+      Nada aqui é real. <a href="{{ request.url.path }}">Ver dados reais</a>.
     </div>
   {% endif %}
 
   {% block conteudo %}{% endblock %}
+
+  <footer class="pe">
+    Consulta ao vivo nas plataformas. No banco guardamos apenas as credenciais de acesso.
+  </footer>
 </main>
 
-<footer class="pe">
-  Consulta ao vivo nas plataformas. No banco guardamos apenas as credenciais de acesso.
-</footer>
+<script>
+  (function () {
+    var raiz = document.documentElement;
+
+    // ---- menu lateral ----
+    var menu = document.getElementById('alternar-lateral');
+    if (menu) {
+      menu.addEventListener('click', function () {
+        var fechada = raiz.dataset.lateral === 'fechada';
+        if (fechada) { delete raiz.dataset.lateral; } else { raiz.dataset.lateral = 'fechada'; }
+        try { localStorage.setItem('lateral', fechada ? 'aberta' : 'fechada'); } catch (e) {}
+      });
+    }
+
+    // ---- tema ----
+    // Sem escolha guardada, segue o sistema. Assim que a pessoa escolhe,
+    // a escolha passa a valer sempre, mesmo que o sistema mude depois.
+    function atual() {
+      if (raiz.dataset.tema) return raiz.dataset.tema;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'escuro' : 'claro';
+    }
+    function pintarBotoes() {
+      var tema = atual();
+      document.querySelectorAll('[data-tema-botao]').forEach(function (b) {
+        b.dataset.estado = tema;
+      });
+      var rotulo = document.getElementById('tema-rotulo');
+      if (rotulo) rotulo.textContent = tema === 'escuro' ? 'Tema escuro' : 'Tema claro';
+    }
+    document.querySelectorAll('[data-tema-botao]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var novo = atual() === 'escuro' ? 'claro' : 'escuro';
+        raiz.dataset.tema = novo;
+        try { localStorage.setItem('tema', novo); } catch (e) {}
+        pintarBotoes();
+        // os gráficos leem as cores do CSS: avisa para redesenharem
+        document.dispatchEvent(new CustomEvent('tema-trocado', { detail: novo }));
+      });
+    });
+    pintarBotoes();
+  })();
+</script>
 
 </body>
 </html>

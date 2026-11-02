@@ -15,14 +15,15 @@
         + {{ c.rotulo }}
       </a>
     {% endfor %}
+    <a class="botao neutro" href="/ajuda">Como gerar as chaves</a>
   {% endif %}
-  <a class="botao neutro" href="/ajuda">Como gerar as chaves</a>
 </div>
 
 {% if not pode('dono') %}
   <div class="faixa info">
     <strong>Seu acesso é {{ rotulo_papel[usuario.papel] }}</strong>
-    Você consulta as contas, mas cadastrar e remover credenciais é só para quem é dono.
+    Você vê aqui apenas as lojas atribuídas ao seu acesso. Cadastrar e remover
+    credenciais, e decidir quem enxerga cada loja, é só para quem é dono.
   </div>
 {% endif %}
 
@@ -77,8 +78,60 @@
         {% endif %}
         <dt>Cadastrada em</dt><dd>{{ c.criada_em|data }}</dd>
       </dl>
+
+      {% if pode('dono') %}
+        <details style="margin-top:14px">
+          <summary style="cursor:pointer; font-weight:600; font-size:14px">
+            Quem enxerga esta loja
+            {% set quantos = acessos.get(c.id, [])|length %}
+            <span class="selo {{ 'azul' if quantos else 'cinza' }}">
+              {{ quantos }} pessoa{{ 's' if quantos != 1 }}
+            </span>
+          </summary>
+          <div style="padding-top:12px">
+            {% if pessoas %}
+              <form method="post" action="/contas/{{ c.id }}/acessos">
+                <div class="grade g3" style="gap:8px">
+                  {% for pessoa in pessoas %}
+                    <label style="display:flex; gap:8px; align-items:flex-start;
+                                  font-size:14px; padding:8px 10px; border:1px solid var(--borda);
+                                  border-radius:7px; cursor:pointer">
+                      <input type="checkbox" name="usuario_id" value="{{ pessoa.id }}"
+                             {{ 'checked' if pessoa.id in acessos.get(c.id, []) }}
+                             style="margin-top:3px">
+                      <span>
+                        <b>{{ pessoa.nome or pessoa.email.split('@')[0] }}</b>
+                        <span class="selo cinza">{{ rotulo_papel[pessoa.papel] }}</span>
+                        <br><span class="cru">{{ pessoa.email }}</span>
+                      </span>
+                    </label>
+                  {% endfor %}
+                </div>
+                <div class="acoes" style="margin-top:12px">
+                  <button class="botao pequeno" type="submit">Salvar quem enxerga</button>
+                </div>
+              </form>
+              <p class="sub" style="margin:10px 0 0">
+                Quem é dono enxerga todas as lojas e por isso não aparece nesta lista.
+                Marcar alguém aqui faz esta loja entrar no painel e nos pedidos dessa pessoa.
+              </p>
+            {% else %}
+              <p class="sub" style="margin:0">
+                Ainda não há operadores nem leitores cadastrados.
+                Crie em <a href="/usuarios">Usuários</a> e eles aparecerão aqui.
+              </p>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
     </div>
   {% endfor %}
+{% elif not erro_infra and supabase_ok and not pode('dono') %}
+  <div class="cartao vazio">
+    <h3>Nenhuma loja atribuída ao seu acesso</h3>
+    <p>Quem é dono do sistema precisa incluir você em pelo menos uma loja<br>
+       para o painel e os pedidos aparecerem.</p>
+  </div>
 {% elif not erro_infra and supabase_ok %}
   <div class="cartao vazio">
     <h3>Nenhuma conta cadastrada</h3>

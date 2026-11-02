@@ -13,6 +13,11 @@
     <div class="indicador {{ 'azul' if papel == 'dono' else 'cinza' }}">
       <div class="rotulo">{{ rotulo_papel[papel] }}</div>
       <div class="nota" style="margin-top:6px">{{ texto }}</div>
+      {% if papel != 'dono' %}
+        <div class="nota" style="margin-top:6px">
+          Enxerga apenas as lojas em que for incluído.
+        </div>
+      {% endif %}
     </div>
   {% endfor %}
 </div>
@@ -23,7 +28,7 @@
   <div class="rolagem">
     <table>
       <thead><tr>
-        <th>Pessoa</th><th>Papel</th><th>Situação</th>
+        <th>Pessoa</th><th>Papel</th><th>Lojas que enxerga</th><th>Situação</th>
         <th>Último acesso</th><th>Ações</th>
       </tr></thead>
       <tbody>
@@ -45,6 +50,24 @@
               </select>
               <button class="botao neutro pequeno" type="submit">Salvar</button>
             </form>
+          </td>
+          <td>
+            {% if p.papel == 'dono' %}
+              <span class="selo azul">todas</span>
+            {% else %}
+              {% set minhas = acessos.get(p.id, []) %}
+              {% if minhas %}
+                {% for conta_id in minhas %}
+                  {% if contas.get(conta_id) %}
+                    <div>{{ contas[conta_id].apelido }}
+                      <span class="cru">{{ canais_rotulo.get(contas[conta_id].canal, '') }}</span>
+                    </div>
+                  {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="selo cinza">nenhuma</span>
+              {% endif %}
+            {% endif %}
           </td>
           <td>
             <span class="selo {{ 'verde' if p.ativo else 'cinza' }}">
@@ -80,6 +103,10 @@
   <p class="sub" style="margin:12px 0 0">
     O sistema não deixa ficar sem nenhum dono ativo, nem você desativar ou remover
     o próprio acesso — é a trava que evita alguém se trancar do lado de fora.
+  </p>
+  <p class="sub" style="margin:8px 0 0">
+    Para escolher quais lojas cada pessoa enxerga, vá em <a href="/contas">Contas</a>
+    e abra <b>Quem enxerga esta loja</b> no card da loja. Quem é dono enxerga todas.
   </p>
 </div>
 {% endif %}

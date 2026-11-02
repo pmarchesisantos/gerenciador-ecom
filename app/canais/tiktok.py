@@ -31,6 +31,10 @@ from app.modelos import (
     CANCELADA,
     DEVOLVIDA,
     EFETIVADA,
+    ENVIO_A_ENVIAR,
+    ENVIO_ENTREGUE,
+    ENVIO_ENVIADO,
+    ENVIO_NAO_APLICA,
     ESTORNADA,
     PENDENTE,
     InfoConta,
@@ -53,6 +57,19 @@ MAPA_STATUS = {
     "DELIVERED": EFETIVADA,
     "COMPLETED": EFETIVADA,
     "CANCELLED": CANCELADA,
+}
+
+
+MAPA_ENVIO = {
+    "UNPAID": ENVIO_NAO_APLICA,
+    "ON_HOLD": ENVIO_NAO_APLICA,
+    "CANCELLED": ENVIO_NAO_APLICA,
+    "AWAITING_SHIPMENT": ENVIO_A_ENVIAR,
+    "AWAITING_COLLECTION": ENVIO_A_ENVIAR,
+    "PARTIALLY_SHIPPING": ENVIO_ENVIADO,
+    "IN_TRANSIT": ENVIO_ENVIADO,
+    "DELIVERED": ENVIO_ENTREGUE,
+    "COMPLETED": ENVIO_ENTREGUE,
 }
 
 
@@ -310,6 +327,8 @@ class TikTokShop(CanalBase):
             criado_em=self._quando(cru.get("create_time")),
             grupo=grupo,
             status_origem=origem,
+            envio=MAPA_ENVIO.get(status, ENVIO_NAO_APLICA),
+            envio_origem=status,
             itens=itens,
             comprador=cru.get("buyer_email") or "-",
             valor_produtos=dec(pag.get("sub_total")) or sum((i.valor_total for i in itens), dec(0)),

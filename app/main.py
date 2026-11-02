@@ -43,8 +43,19 @@ from app.config import (
     redirect_uri,
     supabase_configurado,
 )
+from app.cores import GRADE, GRUPO_COR, SERIE, canal as cor_canal
 from app.cripto import chave_ok, erro_da_chave, origem_da_chave
-from app.modelos import CANAIS_ROTULO, COR_GRUPO, EXPLICA_GRUPO, GRUPOS, ROTULO_GRUPO
+from app.modelos import (
+    CANAIS_ROTULO,
+    COR_ENVIO,
+    COR_GRUPO,
+    ENVIOS,
+    EXPLICA_ENVIO,
+    EXPLICA_GRUPO,
+    GRUPOS,
+    ROTULO_ENVIO,
+    ROTULO_GRUPO,
+)
 from app.servicos import consulta as servico_consulta
 from app.servicos import contas as servico_contas
 from app.servicos import exemplo as servico_exemplo
@@ -56,7 +67,22 @@ app = FastAPI(title="Sistema-Ecom", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=PASTA / "static"), name="static")
 templates = Jinja2Templates(directory=str(PASTA / "templates"))
 
-ROTAS_ABERTAS = {"/entrar", "/sair", "/primeiro-acesso", "/saude"}
+
+def _versao_estilo() -> str:
+    """Sufixo do CSS, para o navegador nao servir a folha antiga do cache.
+
+    Muda sozinho sempre que o arquivo muda - sem isso, uma alteracao de
+    layout so aparece depois de o usuario limpar o cache.
+    """
+    try:
+        return str(int((PASTA / "static" / "estilo.css").stat().st_mtime))
+    except OSError:
+        return "1"
+
+
+ESTILO_VERSAO = _versao_estilo()
+
+ROTAS_ABERTAS = {"/entrar", "/sair", "/primeiro-acesso"}
 
 
 async def _exigir_login(request: Request, seguir):
@@ -196,6 +222,70 @@ def _atalhos() -> dict:
     }
 
 
+def _graficos(resumo: dict) -> dict:
+    """Dados que vao para os graficos, ja com as cores resolvidas no servidor.
+
+    Montar aqui (e nao no navegador) mantem uma unica fonte de verdade para
+    cor e numero: a tela e o grafico nunca discordam.
+    """
+    barras_canal = [
+        {
+            "rotulo": c["rotulo"],
+            "valor": float(c["grupos"]["efetivada"]["valor"]),
+            "pedidos": c["grupos"]["efetivada"]["quantidade"],
+            "cor": cor_canal(c["canal"]),
+        }
+        for c in resumo["canais"]
+    ]
+    total_canal = sum(b["valor"] for b in barras_canal) or 1.0
+    for b in barras_canal:
+        b["fatia"] = b["valor"] / total_canal * 100
+    barras_canal.sort(key=lambda b: b["valor"], reverse=True)
+
+    barras_grupo = []
+    maior_grupo = max(
+        (b["quantidade"] for b in resumo["por_grupo"].values()), default=0
+    ) or 1
+    for g in GRUPOS:
+        bloco_g = resumo["por_grupo"][g]
+        barras_grupo.append(
+            {
+                "grupo": g,
+                "rotulo": ROTULO_GRUPO[g],
+                "quantidade": bloco_g["quantidade"],
+                "valor": float(bloco_g["valor"]),
+                "cor": GRUPO_COR[g],
+                "largura": bloco_g["quantidade"] / maior_grupo * 100,
+            }
+        )
+
+    maior_sku = max((s["valor"] for s in resumo["top_sku"]), default=0) or 1
+    barras_sku = [
+        {
+            "sku": s["sku"],
+            "titulo": s["titulo"],
+            "itens": s["itens"],
+            "valor": float(s["valor"]),
+            "largura": float(s["valor"]) / float(maior_sku) * 100,
+        }
+        for s in resumo["top_sku"][:8]
+    ]
+
+    # o gráfico lê as cores do CSS na hora de desenhar, para acompanhar o tema
+    serie = {
+        "rotulos": [d["dia"].strftime("%d/%m") for d in resumo["dias"]],
+        "valores": [float(d["valor"]) for d in resumo["dias"]],
+        "pedidos": [d["quantidade"] for d in resumo["dias"]],
+    }
+
+    return {
+        "canais": barras_canal,
+        "grupos": barras_grupo,
+        "sku": barras_sku,
+        "serie": serie,
+    }
+
+
 def _base(request: Request, periodo: dict, **extra) -> dict:
     usuario = auth.usuario_da_sessao(request)
     return {
@@ -208,7 +298,12 @@ def _base(request: Request, periodo: dict, **extra) -> dict:
         "rotulo_grupo": ROTULO_GRUPO,
         "explica_grupo": EXPLICA_GRUPO,
         "cor_grupo": COR_GRUPO,
+        "envios": ENVIOS,
+        "rotulo_envio": ROTULO_ENVIO,
+        "explica_envio": EXPLICA_ENVIO,
+        "cor_envio": COR_ENVIO,
         "supabase_ok": supabase_configurado(),
+        "estilo_versao": ESTILO_VERSAO,
         "usuario": usuario,
         "pode": lambda papel: auth.pode(usuario, papel),
         "rotulo_papel": auth.ROTULO_PAPEL,
@@ -219,13 +314,23 @@ def _base(request: Request, periodo: dict, **extra) -> dict:
     }
 
 
-async def _carregar(periodo: dict, exemplo: bool, forcar: bool) -> tuple[dict, str]:
+async def _carregar(
+    periodo: dict,
+    exemplo: bool,
+    forcar: bool,
+    usuario: dict | None = None,
+    com_envio: bool = False,
+) -> tuple[dict, str]:
     """Devolve (dados, erro de infraestrutura)."""
     if exemplo:
         return servico_exemplo.resultado(periodo["inicio"], periodo["fim"]), ""
     try:
         dados = await servico_consulta.consultar(
-            periodo["inicio"], periodo["fim"], forcar=forcar
+            periodo["inicio"],
+            periodo["fim"],
+            forcar=forcar,
+            usuario=usuario,
+            com_envio=com_envio,
         )
         return dados, ""
     except db.ErroBanco as e:
@@ -235,6 +340,9 @@ async def _carregar(periodo: dict, exemplo: bool, forcar: bool) -> tuple[dict, s
             "erros": [],
             "houve_consulta": False,
             "atualizado_em": datetime.now(tz=FUSO),
+            "escopo_limitado": False,
+            "lojas_escondidas": 0,
+            "lojas_visiveis": 0,
         }
         return vazio, str(e)
 
@@ -338,14 +446,15 @@ async def painel(
     exemplo: int = 0,
     atualizar: int = 0,
 ):
+    usuario = auth.usuario_da_sessao(request)
     periodo = _periodo(inicio, fim)
-    dados, erro_infra = await _carregar(periodo, bool(exemplo), bool(atualizar))
+    dados, erro_infra = await _carregar(periodo, bool(exemplo), bool(atualizar), usuario)
     resumo = servico_consulta.resumir(dados["pedidos"])
 
     contas_resumo = []
     if not exemplo and not erro_infra:
         try:
-            contas_resumo = await servico_contas.resumo()
+            contas_resumo = await servico_contas.resumo(usuario)
         except db.ErroBanco as e:
             erro_infra = str(e)
 
@@ -355,6 +464,7 @@ async def painel(
             request,
             periodo,
             resumo=resumo,
+            graficos=_graficos(resumo),
             dados=dados,
             contas=contas_resumo,
             exemplo=bool(exemplo),
@@ -374,13 +484,19 @@ async def pedidos(
     fim: str | None = None,
     canal: str = "",
     grupo: str = "",
+    envio: str = "",
     q: str = "",
     exemplo: int = 0,
     atualizar: int = 0,
 ):
+    usuario = auth.usuario_da_sessao(request)
     periodo = _periodo(inicio, fim)
-    dados, erro_infra = await _carregar(periodo, bool(exemplo), bool(atualizar))
-    lista = servico_consulta.filtrar(dados["pedidos"], canal, grupo, q)
+    # so esta tela pede o estado do envio: no Mercado Livre ele custa uma
+    # chamada por pedido, e o painel nao precisa disso
+    dados, erro_infra = await _carregar(
+        periodo, bool(exemplo), bool(atualizar), usuario, com_envio=True
+    )
+    lista = servico_consulta.filtrar(dados["pedidos"], canal, grupo, q, envio)
 
     return templates.TemplateResponse(
         "pedidos.html",
@@ -390,8 +506,9 @@ async def pedidos(
             lista=lista,
             resumo=servico_consulta.resumir(lista),
             resumo_total=servico_consulta.resumir(dados["pedidos"]),
+            contagem_envio=servico_consulta.contar_envios(dados["pedidos"]),
             dados=dados,
-            filtro={"canal": canal, "grupo": grupo, "q": q},
+            filtro={"canal": canal, "grupo": grupo, "q": q, "envio": envio},
             exemplo=bool(exemplo),
             erro_infra=erro_infra,
         ),
@@ -403,9 +520,16 @@ async def pedidos(
 # ===========================================================================
 @app.get("/contas", response_class=HTMLResponse)
 async def contas_lista(request: Request):
-    erro_infra, lista = "", []
+    usuario = auth.usuario_da_sessao(request)
+    erro_infra, lista, pessoas, acessos = "", [], [], {}
     try:
-        lista = await servico_contas.resumo()
+        lista = await servico_contas.resumo(usuario)
+        if auth.pode(usuario, auth.DONO):
+            # so o dono monta a lista de quem enxerga cada loja
+            pessoas = [
+                p for p in await servico_usuarios.listar() if p["papel"] != auth.DONO
+            ]
+            acessos = await servico_contas.acessos_por_conta()
     except db.ErroBanco as e:
         erro_infra = str(e)
     return templates.TemplateResponse(
@@ -414,6 +538,8 @@ async def contas_lista(request: Request):
             request,
             _periodo(None, None),
             lista=lista,
+            pessoas=pessoas,
+            acessos=acessos,
             erro_infra=erro_infra,
             redirects={n: redirect_uri(n) for n in CANAIS},
         ),
@@ -483,8 +609,11 @@ async def conta_criar(
 
 @app.get("/contas/{conta_id}", response_class=HTMLResponse)
 async def conta_detalhe(request: Request, conta_id: str):
+    usuario = auth.usuario_da_sessao(request)
     erro_infra, linha, info, eventos, erro_info = "", None, None, [], ""
     try:
+        if not await servico_contas.pode_ver(usuario, conta_id):
+            return _volta("/contas", erro="Esta loja não faz parte do seu acesso.")
         linha = await servico_contas.buscar(conta_id)
         if linha:
             eventos = await servico_contas.eventos(conta_id, 15)
@@ -506,7 +635,7 @@ async def conta_detalhe(request: Request, conta_id: str):
 
     detalhado = None
     if linha and not erro_infra:
-        todas = await servico_contas.resumo()
+        todas = await servico_contas.resumo(usuario)
         detalhado = next((c for c in todas if c["id"] == conta_id), None)
 
     return templates.TemplateResponse(
@@ -530,6 +659,8 @@ async def conta_conectar(request: Request, conta_id: str):
     usuario = auth.usuario_da_sessao(request)
     try:
         auth.exigir(usuario, auth.OPERADOR)
+        if not await servico_contas.pode_ver(usuario, conta_id):
+            raise auth.SemPermissao("Esta loja não faz parte do seu acesso.")
         url = await servico_contas.iniciar_autorizacao(conta_id)
     except (auth.SemPermissao, ErroCanal, db.ErroBanco) as e:
         return _volta("/contas", erro=str(e))
@@ -541,6 +672,8 @@ async def conta_renovar(request: Request, conta_id: str):
     usuario = auth.usuario_da_sessao(request)
     try:
         auth.exigir(usuario, auth.OPERADOR)
+        if not await servico_contas.pode_ver(usuario, conta_id):
+            raise auth.SemPermissao("Esta loja não faz parte do seu acesso.")
         msg = await servico_contas.renovar_manual(conta_id, usuario)
     except (auth.SemPermissao, ErroCanal, db.ErroBanco) as e:
         return _volta(f"/contas/{conta_id}", erro=str(e))
@@ -559,6 +692,21 @@ async def conta_remover(request: Request, conta_id: str):
     servico_consulta.limpar_cache()
     return _volta("/contas", aviso="Conta removida.")
 
+
+
+@app.post("/contas/{conta_id}/acessos")
+async def conta_acessos(request: Request, conta_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.DONO)
+        form = await request.form()
+        await servico_contas.definir_acessos(
+            conta_id, form.getlist("usuario_id"), usuario
+        )
+    except (auth.SemPermissao, db.ErroBanco) as e:
+        return _volta("/contas", erro=str(e))
+    servico_consulta.limpar_cache()
+    return _volta(f"/contas#conta-{conta_id}", aviso="Acesso à loja atualizado.")
 
 # ===========================================================================
 # volta da autorizacao
@@ -602,9 +750,11 @@ async def usuarios_lista(request: Request):
     except auth.SemPermissao as e:
         return _volta("/", erro=str(e))
 
-    erro_infra, lista = "", []
+    erro_infra, lista, contas, acessos = "", [], [], {}
     try:
         lista = await servico_usuarios.listar()
+        contas = await servico_contas.listar()
+        acessos = await servico_contas.acessos_por_usuario()
     except db.ErroBanco as e:
         erro_infra = str(e)
 
@@ -614,6 +764,8 @@ async def usuarios_lista(request: Request):
             request,
             _periodo(None, None),
             lista=lista,
+            contas={c["id"]: c for c in contas},
+            acessos=acessos,
             erro_infra=erro_infra,
             papeis=auth.FORCA,
             explica_papel=auth.EXPLICA_PAPEL,
@@ -699,6 +851,10 @@ async def usuario_remover(request: Request, usuario_id: str):
 # ===========================================================================
 @app.get("/ajuda", response_class=HTMLResponse)
 async def ajuda(request: Request, canal: str = ""):
+    try:
+        auth.exigir(auth.usuario_da_sessao(request), auth.DONO)
+    except auth.SemPermissao as e:
+        return _volta("/", erro=str(e))
     return templates.TemplateResponse(
         "ajuda.html",
         _base(
@@ -712,6 +868,13 @@ async def ajuda(request: Request, canal: str = ""):
 
 @app.get("/saude", response_class=HTMLResponse)
 async def saude(request: Request):
+    # Nao esta em ROTAS_ABERTAS: exige sessao. Quem nao e dono nao entra.
+    # Um deploy quebrado continua diagnosticavel pela propria tela de login,
+    # que mostra a faixa de configuracao incompleta antes de qualquer acesso.
+    try:
+        auth.exigir(auth.usuario_da_sessao(request), auth.DONO)
+    except auth.SemPermissao as e:
+        return _volta("/", erro=str(e))
     banco_ok, banco_msg = await db.testar_conexao()
     return templates.TemplateResponse(
         "saude.html",

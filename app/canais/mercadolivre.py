@@ -8,6 +8,7 @@ Doc: https://developers.mercadolivre.com.br/pt_br/autenticacao-e-autorizacao
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import secrets
@@ -21,6 +22,12 @@ from app.config import FUSO, redirect_uri
 from app.modelos import (
     CANCELADA,
     EFETIVADA,
+    ENVIO_A_ENVIAR,
+    ENVIO_DESCONHECIDO,
+    ENVIO_ENTREGUE,
+    ENVIO_ENVIADO,
+    ENVIO_NAO_APLICA,
+    ENVIO_PROBLEMA,
     ESTORNADA,
     PENDENTE,
     InfoConta,
@@ -45,6 +52,22 @@ MAPA_STATUS = {
 
 # status de pagamento que mandam mais que o status do pedido
 PAGAMENTO_ESTORNO = {"refunded", "charged_back"}
+
+# status do envio (recurso separado) -> dimensao de envio do painel
+MAPA_ENVIO = {
+    "pending": ENVIO_A_ENVIAR,
+    "handling": ENVIO_A_ENVIAR,
+    "ready_to_ship": ENVIO_A_ENVIAR,
+    "shipped": ENVIO_ENVIADO,
+    "delivered": ENVIO_ENTREGUE,
+    "not_delivered": ENVIO_PROBLEMA,
+    "cancelled": ENVIO_NAO_APLICA,
+    "to_be_agreed": ENVIO_NAO_APLICA,
+}
+
+# teto de chamadas extras por consulta, para nao estourar o tempo da requisicao
+TETO_ENVIOS = 200
+SIMULTANEAS = 8
 
 
 class MercadoLivre(CanalBase):
@@ -199,6 +222,35 @@ class MercadoLivre(CanalBase):
                 break
         return pedidos
 
+    async def enriquecer_envio(self, conta: dict, pedidos: list) -> None:
+        """Busca o estado de cada envio.
+
+        O Mercado Livre nao devolve isso junto do pedido: e preciso uma
+        chamada por envio. Por isso roda so quando a tela de pedidos pede,
+        em paralelo e com teto - a tela do painel nao paga esse custo.
+        """
+        alvos = [
+            p for p in pedidos
+            if p.envio == ENVIO_DESCONHECIDO and p.envio_id
+        ][:TETO_ENVIOS]
+        if not alvos:
+            return
+
+        porteiro = asyncio.Semaphore(SIMULTANEAS)
+
+        async def um(pedido) -> None:
+            async with porteiro:
+                try:
+                    j = await self._get(conta, f"/shipments/{pedido.envio_id}")
+                except ErroCanal:
+                    return  # fica "nao informado" em vez de derrubar a tela
+            situacao = (j.get("status") or "").lower()
+            detalhe = j.get("substatus") or ""
+            pedido.envio = MAPA_ENVIO.get(situacao, ENVIO_DESCONHECIDO)
+            pedido.envio_origem = f"{situacao}/{detalhe}" if detalhe else situacao
+
+        await asyncio.gather(*(um(p) for p in alvos))
+
     def _traduzir(self, cru: dict, conta: dict) -> Pedido:
         status = (cru.get("status") or "").lower()
         grupo = MAPA_STATUS.get(status, PENDENTE)
@@ -244,6 +296,8 @@ class MercadoLivre(CanalBase):
             grupo=grupo,
             status_origem=origem,
             itens=itens,
+            envio=ENVIO_NAO_APLICA if grupo in (CANCELADA, PENDENTE) else ENVIO_DESCONHECIDO,
+            envio_id=str((cru.get("shipping") or {}).get("id") or ""),
             comprador=(cru.get("buyer") or {}).get("nickname") or "-",
             valor_produtos=sum((i.valor_total for i in itens), dec(0)),
             frete=frete,
