@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Quem tem acesso</h1>
+<p class="sub">
+  O e-mail e a senha ficam no Supabase Auth. Aqui você define o papel de cada pessoa —
+  e o papel é o que decide quem pode mexer nas credenciais das lojas.
+</p>
+
+<div class="grade g3" style="margin-bottom:18px">
+  {% for papel, texto in explica_papel.items() %}
+    <div class="indicador {{ 'azul' if papel == 'dono' else 'cinza' }}">
+      <div class="rotulo">{{ rotulo_papel[papel] }}</div>
+      <div class="nota" style="margin-top:6px">{{ texto }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if lista %}
+<div class="cartao">
+  <h3>Pessoas cadastradas</h3>
+  <div class="rolagem">
+    <table>
+      <thead><tr>
+        <th>Pessoa</th><th>Papel</th><th>Situação</th>
+        <th>Último acesso</th><th>Ações</th>
+      </tr></thead>
+      <tbody>
+      {% for p in lista %}
+        <tr>
+          <td>
+            <b>{{ p.nome or p.email.split('@')[0] }}</b>
+            {% if p.id == usuario.id %}<span class="selo azul">você</span>{% endif %}
+            <br><span class="cru">{{ p.email }}</span>
+          </td>
+          <td>
+            <form method="post" action="/usuarios/{{ p.id }}/papel" class="acoes">
+              <select name="papel" style="min-width:120px">
+                {% for papel in papeis %}
+                  <option value="{{ papel }}" {{ 'selected' if p.papel == papel }}>
+                    {{ rotulo_papel[papel] }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button class="botao neutro pequeno" type="submit">Salvar</button>
+            </form>
+          </td>
+          <td>
+            <span class="selo {{ 'verde' if p.ativo else 'cinza' }}">
+              {{ 'ativo' if p.ativo else 'desativado' }}
+            </span>
+          </td>
+          <td>{{ p.ultimo_acesso|data }}</td>
+          <td>
+            <div class="acoes">
+              <form method="post" action="/usuarios/{{ p.id }}/ativo" style="display:inline">
+                <input type="hidden" name="ativo" value="{{ '0' if p.ativo else '1' }}">
+                <button class="botao neutro pequeno" type="submit">
+                  {{ 'Desativar' if p.ativo else 'Reativar' }}
+                </button>
+              </form>
+              <form method="post" action="/usuarios/{{ p.id }}/senha" style="display:inline"
+                    onsubmit="return !!this.senha.value;">
+                <input type="password" name="senha" placeholder="nova senha" minlength="8"
+                       style="min-width:130px">
+                <button class="botao neutro pequeno" type="submit">Trocar</button>
+              </form>
+              <form method="post" action="/usuarios/{{ p.id }}/remover" style="display:inline"
+                    onsubmit="return confirm('Remover o acesso de {{ p.email }}? Isso apaga o login dessa pessoa.');">
+                <button class="botao perigo pequeno" type="submit">Remover</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="sub" style="margin:12px 0 0">
+    O sistema não deixa ficar sem nenhum dono ativo, nem você desativar ou remover
+    o próprio acesso — é a trava que evita alguém se trancar do lado de fora.
+  </p>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <h3>Dar acesso a alguém</h3>
+  <p class="sub" style="margin-top:0">
+    A pessoa não se cadastra sozinha: você cria o acesso aqui e passa a senha para ela.
+    Isso evita que qualquer um que descubra o endereço do sistema consiga entrar.
+  </p>
+  <form method="post" action="/usuarios/novo">
+    <div class="grade g3">
+      <label class="campo">
+        Nome
+        <input type="text" name="nome" placeholder="opcional" style="min-width:100%">
+      </label>
+      <label class="campo">
+        E-mail
+        <input type="text" name="email" required style="min-width:100%">
+      </label>
+      <label class="campo">
+        Senha provisória
+        <input type="password" name="senha" required minlength="8" style="min-width:100%">
+      </label>
+      <label class="campo">
+        Papel
+        <select name="papel" style="min-width:100%">
+          {% for papel in papeis %}
+            <option value="{{ papel }}" {{ 'selected' if papel == 'leitor' }}>
+              {{ rotulo_papel[papel] }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div class="acoes" style="margin-top:14px">
+      <button class="botao" type="submit">Criar acesso</button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

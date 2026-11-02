@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block titulo %}Nova conta - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Cadastrar conta: {{ c.rotulo }}</h1>
+<p class="sub">
+  Primeiro você guarda aqui o par de chaves do seu aplicativo. Depois, no botão
+  <b>Conectar loja</b>, a plataforma pede sua autorização e devolve os tokens.
+</p>
+
+<div class="atalhos">
+  {% for nome, outro in canais.items() %}
+    <a href="/contas/nova?canal={{ nome }}" class="{{ 'ativo' if nome == escolhido }}">{{ outro.rotulo }}</a>
+  {% endfor %}
+</div>
+
+{% if c.exige_aprovacao %}
+  <div class="faixa atencao">
+    <strong>Esta plataforma aprova o aplicativo antes de liberar o acesso de produção</strong>
+    Você consegue cadastrar as chaves agora, mas a conexão só funciona depois que o app
+    estiver aprovado (ou usando o ambiente de testes, quando houver).
+  </div>
+{% else %}
+  <div class="faixa info">
+    <strong>Esta plataforma libera as chaves na hora</strong>
+    Você cria o aplicativo, copia as duas chaves e já pode conectar.
+  </div>
+{% endif %}
+
+<div class="grade g2">
+  <div class="cartao">
+    <h3>Dados do aplicativo</h3>
+    <form method="post" action="/contas/nova">
+      <input type="hidden" name="canal" value="{{ escolhido }}">
+
+      <label class="campo" style="margin-bottom:14px">
+        Apelido desta conta
+        <input type="text" name="apelido" required placeholder="ex.: Loja principal"
+               style="min-width:100%">
+        <span class="sub" style="font-weight:400; margin:0">
+          Só para você se achar. Se tiver duas lojas no mesmo canal, dê nomes diferentes.
+        </span>
+      </label>
+
+      <label class="campo" style="margin-bottom:14px">
+        {{ c.rotulo_client_id }}
+        <input type="text" name="client_id" required style="min-width:100%">
+      </label>
+
+      <label class="campo" style="margin-bottom:14px">
+        {{ c.rotulo_client_secret }}
+        <input type="password" name="client_secret" required style="min-width:100%">
+        <span class="sub" style="font-weight:400; margin:0">
+          Fica criptografado antes de ir para o banco e nunca mais é exibido inteiro.
+        </span>
+      </label>
+
+      {% for chave, rotulo in c.campos_extra.items() %}
+        <label class="campo" style="margin-bottom:14px">
+          {{ rotulo }}
+          <input type="text" name="{{ chave }}" style="min-width:100%"
+                 {% if chave == 'ambiente' %}placeholder="producao"{% endif %}>
+        </label>
+      {% endfor %}
+
+      <div class="acoes" style="margin-top:6px">
+        <button class="botao" type="submit">Salvar e ir para Contas</button>
+        <a class="botao neutro" href="/contas">Cancelar</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="cartao">
+    <h3>Onde achar essas chaves</h3>
+    <p class="sub" style="margin-top:0">Resumo. O passo a passo completo está em
+      <a href="/ajuda?canal={{ escolhido }}">Como gerar as chaves</a>.</p>
+
+    {% if escolhido == 'mercadolivre' %}
+      <ol class="passos">
+        <li>Acesse <code>developers.mercadolivre.com.br/devcenter</code> logado na conta vendedora.</li>
+        <li>Crie uma aplicação nova.</li>
+        <li>Em <b>URIs de redirect</b>, cole a URL de retorno abaixo.</li>
+        <li>Salve e copie <b>App ID</b> e <b>Secret Key</b> da listagem.</li>
+      </ol>
+    {% elif escolhido == 'shopee' %}
+      <ol class="passos">
+        <li>Acesse <code>open.shopee.com</code> e cadastre-se como desenvolvedor.</li>
+        <li>Em <b>App Management</b>, crie um app e escolha a região Brasil.</li>
+        <li>Cadastre a URL de retorno abaixo como redirect do app.</li>
+        <li>Copie <b>Partner ID</b> e <b>Partner Key</b>. Antes da aprovação eles valem só para o sandbox.</li>
+      </ol>
+    {% else %}
+      <ol class="passos">
+        <li>Acesse <code>partner.tiktokshop.com</code> e cadastre-se como desenvolvedor.</li>
+        <li>Crie um app e peça as permissões de pedido (order) e de devolução (return/refund).</li>
+        <li>Na aba <b>Authorization</b>, cadastre a URL de retorno abaixo e copie o <b>Service ID</b>.</li>
+        <li>Copie <b>App Key</b> e <b>App Secret</b>.</li>
+      </ol>
+    {% endif %}
+
+    <h3 style="margin-top:18px">URL de retorno deste canal</h3>
+    <p class="cru" style="word-break:break-all; background:#eef1f4; padding:10px; border-radius:7px">
+      {{ redirect }}
+    </p>
+    <p class="sub" style="margin-bottom:0">
+      Precisa estar cadastrada exatamente assim na plataforma. Ela muda junto com
+      <code class="inline-cod">BASE_URL</code> no .env.
+    </p>
+  </div>
+</div>
+
+{% endblock %}

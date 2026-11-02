@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block titulo %}Painel - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+{% set qp = 'inicio=' ~ periodo.inicio ~ '&fim=' ~ periodo.fim %}
+{% set ex = '&exemplo=1' if exemplo else '' %}
+
+<h1>Painel de vendas</h1>
+<p class="sub">
+  Período de {{ periodo.inicio|dia }} a {{ periodo.fim|dia }} ({{ periodo.dias }} dia{{ 's' if periodo.dias > 1 }}),
+  somando todas as contas conectadas. Atualizado às {{ dados.atualizado_em.strftime('%H:%M') }}.
+</p>
+
+<div class="cartao">
+  <form class="filtros" method="get" action="/">
+    <label class="campo">De
+      <input type="date" name="inicio" value="{{ periodo.inicio }}">
+    </label>
+    <label class="campo">Até
+      <input type="date" name="fim" value="{{ periodo.fim }}">
+    </label>
+    {% if exemplo %}<input type="hidden" name="exemplo" value="1">{% endif %}
+    <button class="botao" type="submit">Aplicar</button>
+    <a class="botao neutro" href="/?{{ qp }}&atualizar=1{{ ex }}">Atualizar agora</a>
+  </form>
+  <div class="atalhos" style="margin-top:12px">
+    {% set hoje = periodo.fim %}
+    <a href="/?inicio={{ hoje }}&fim={{ hoje }}{{ ex }}">Hoje</a>
+    <a href="/?inicio={{ atalhos.sete }}&fim={{ hoje }}{{ ex }}">7 dias</a>
+    <a href="/?inicio={{ atalhos.trinta }}&fim={{ hoje }}{{ ex }}">30 dias</a>
+    <a href="/?inicio={{ atalhos.mes }}&fim={{ hoje }}{{ ex }}">Mês atual</a>
+    {% if not exemplo %}<a href="/?{{ qp }}&exemplo=1">Ver com dados de exemplo</a>{% endif %}
+  </div>
+</div>
+
+{# ---------------------------------------------------------- situacao ---- #}
+{% if not exemplo %}
+  {% if not contas %}
+    <div class="cartao vazio">
+      <h3>Nenhuma loja conectada ainda</h3>
+      <p>O painel fica vazio até a primeira loja ser autorizada.<br>
+         O Mercado Livre é o mais rápido de liberar: as chaves saem na hora.</p>
+      <div class="acoes" style="justify-content:center">
+        <a class="botao" href="/ajuda">Ver o caminho das chaves</a>
+        <a class="botao vazio" href="/contas/nova?canal=mercadolivre">Cadastrar uma conta</a>
+        <a class="botao neutro" href="/?{{ qp }}&exemplo=1">Explorar com dados de exemplo</a>
+      </div>
+    </div>
+  {% else %}
+    <div class="cartao">
+      <h3>Lojas conectadas</h3>
+      <div class="rolagem">
+        <table class="compacta">
+          <thead><tr>
+            <th>Conta</th><th>Canal</th><th>Loja</th>
+            <th>Situação</th><th>Token vence</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for c in contas %}
+            <tr>
+              <td><a href="/contas/{{ c.id }}">{{ c.apelido }}</a></td>
+              <td>{{ c.canal_rotulo }}</td>
+              <td>{{ c.loja_nome or '-' }}<br><span class="cru">{{ c.loja_id or '' }}</span></td>
+              <td><span class="selo {{ c.situacao.cor }}">{{ c.situacao.rotulo }}</span></td>
+              <td>{{ c.access_expira_em_dt|falta }}</td>
+              <td class="num"><a class="botao pequeno neutro" href="/contas/{{ c.id }}">Detalhes</a></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}
+
+{% if dados.erros %}
+  <div class="faixa erro">
+    <strong>{{ dados.erros|length }} conta(s) não responderam</strong>
+    <p>Os números abaixo estão incompletos — falta o que viria destas contas:</p>
+    <ul style="margin:8px 0 0">
+      {% for e in dados.erros %}
+        <li><b>{{ canais_rotulo.get(e.canal, e.canal) }} / {{ e.conta }}</b>: {{ e.erro }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+{# ------------------------------------------------------------ grupos ---- #}
+<h2>Como estão os pedidos do período</h2>
+<p class="sub">Cada plataforma usa nomes próprios de status. Aqui tudo é traduzido para estes cinco grupos.</p>
+
+<div class="grade g5">
+  {% for g in grupos %}
+    {% set b = resumo.por_grupo[g] %}
+    <div class="indicador {{ cor_grupo[g] }}">
+      <div class="rotulo">{{ rotulo_grupo[g] }}</div>
+      <div class="valor">{{ b.quantidade|inteiro }}</div>
+      <div class="apoio">{{ b.valor|moeda }} &middot; {{ b.itens|inteiro }} itens</div>
+      <div class="nota">{{ explica_grupo[g] }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<h2>Resumo financeiro</h2>
+<div class="grade g5">
+  <div class="indicador verde">
+    <div class="rotulo">Faturamento</div>
+    <div class="valor">{{ resumo.faturamento|moeda }}</div>
+    <div class="apoio">só pedidos efetivados</div>
+    <div class="nota">Soma do que o comprador pagou, frete incluído. Não desconta comissão da plataforma.</div>
+  </div>
+  <div class="indicador azul">
+    <div class="rotulo">Ticket médio</div>
+    <div class="valor">{{ resumo.ticket_medio|moeda }}</div>
+    <div class="apoio">por pedido efetivado</div>
+    <div class="nota">Faturamento dividido pela quantidade de pedidos efetivados.</div>
+  </div>
+  <div class="indicador azul">
+    <div class="rotulo">Itens vendidos</div>
+    <div class="valor">{{ resumo.itens_vendidos|inteiro }}</div>
+    <div class="apoio">unidades</div>
+    <div class="nota">Soma das quantidades de cada produto nos pedidos efetivados.</div>
+  </div>
+  <div class="indicador vermelho">
+    <div class="rotulo">Valor perdido</div>
+    <div class="valor">{{ resumo.valor_perdido|moeda }}</div>
+    <div class="apoio">cancelado + devolvido + estornado</div>
+    <div class="nota">Dinheiro que entrou na conta de pedidos mas não virou venda.</div>
+  </div>
+  <div class="indicador amarelo">
+    <div class="rotulo">Taxa de cancelamento</div>
+    <div class="valor">{{ resumo.taxa_cancelamento|pct }}</div>
+    <div class="apoio">dos pedidos já resolvidos</div>
+    <div class="nota">Cancelados ÷ (cancelados + efetivados). Pedidos ainda pendentes ficam de fora.</div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------ canais ---- #}
+{% if resumo.canais %}
+<h2>Por canal</h2>
+<div class="cartao">
+  <div class="rolagem">
+    <table>
+      <thead><tr>
+        <th>Canal</th>
+        <th class="num">Pedidos</th>
+        <th class="num">Faturamento</th>
+        {% for g in grupos %}<th class="num">{{ rotulo_grupo[g] }}</th>{% endfor %}
+      </tr></thead>
+      <tbody>
+      {% for c in resumo.canais %}
+        <tr>
+          <td><b>{{ c.rotulo }}</b></td>
+          <td class="num">{{ c.total.quantidade|inteiro }}</td>
+          <td class="num">{{ c.grupos.efetivada.valor|moeda }}</td>
+          {% for g in grupos %}
+            <td class="num">
+              {% if g == 'efetivada' %}
+                {{ c.grupos[g].quantidade|inteiro }}
+              {% elif c.grupos[g].quantidade %}
+                {{ c.grupos[g].quantidade|inteiro }}
+                <span class="cru">{{ c.grupos[g].valor|moeda }}</span>
+              {% else %}
+                &mdash;
+              {% endif %}
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# -------------------------------------------------------------- dias ---- #}
+{% if resumo.dias %}
+<h2>Vendas efetivadas por dia</h2>
+<div class="cartao">
+  <div class="rolagem">
+    <table class="compacta">
+      <thead><tr><th>Dia</th><th class="num">Pedidos</th><th class="num">Valor</th><th style="width:40%">&nbsp;</th></tr></thead>
+      <tbody>
+      {% for d in resumo.dias %}
+        <tr>
+          <td>{{ d.dia|dia }}</td>
+          <td class="num">{{ d.quantidade|inteiro }}</td>
+          <td class="num">{{ d.valor|moeda }}</td>
+          <td>
+            <div class="barra">
+              <span style="width: {{ (d.valor / resumo.pico_dia * 100)|round(1) if resumo.pico_dia else 0 }}%"></span>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{# --------------------------------------------------------------- sku ---- #}
+{% if resumo.top_sku %}
+<h2>Produtos mais vendidos</h2>
+<div class="cartao">
+  <div class="rolagem">
+    <table class="compacta">
+      <thead><tr><th>SKU</th><th>Produto</th><th class="num">Unidades</th><th class="num">Valor</th></tr></thead>
+      <tbody>
+      {% for s in resumo.top_sku %}
+        <tr>
+          <td class="cru">{{ s.sku }}</td>
+          <td>{{ s.titulo }}</td>
+          <td class="num">{{ s.itens|inteiro }}</td>
+          <td class="num">{{ s.valor|moeda }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="sub" style="margin:12px 0 0">
+    O mesmo produto pode ter SKU diferente em cada plataforma — nesse caso ele aparece
+    em mais de uma linha. Unificar isso é o próximo passo natural do sistema.
+  </p>
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------- ultimos ---- #}
+{% if ultimos %}
+<h2>Últimos pedidos</h2>
+<div class="cartao">
+  <div class="rolagem">
+    <table class="compacta">
+      <thead><tr>
+        <th>Quando</th><th>Canal</th><th>Pedido</th><th>Itens</th>
+        <th>Situação</th><th class="num">Valor</th>
+      </tr></thead>
+      <tbody>
+      {% for p in ultimos %}
+        <tr>
+          <td>{{ p.criado_em|data }}</td>
+          <td>{{ p.canal_rotulo }}</td>
+          <td class="cru">{{ p.pedido_id }}</td>
+          <td>{{ p.resumo_itens }}</td>
+          <td><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
+          <td class="num">{{ p.valor_total|moeda }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="acoes" style="margin-top:12px">
+    <a class="botao vazio" href="/pedidos?{{ qp }}{{ ex }}">Ver todos os {{ resumo.total_pedidos|inteiro }} pedidos</a>
+  </div>
+</div>
+{% elif dados.houve_consulta %}
+  <div class="cartao vazio">
+    <h3>Nenhum pedido neste período</h3>
+    <p>As contas responderam, só não havia pedido criado entre
+       {{ periodo.inicio|dia }} e {{ periodo.fim|dia }}.</p>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block titulo %}{{ conta.apelido if conta else 'Conta' }} - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+{% if conta %}
+<h1>
+  {{ conta.apelido }}
+  {% if conta.situacao %}<span class="selo {{ conta.situacao.cor }}">{{ conta.situacao.rotulo }}</span>{% endif %}
+</h1>
+<p class="sub">
+  {{ canais_rotulo.get(conta.canal, conta.canal) }}
+  {% if conta.loja_nome %}&middot; {{ conta.loja_nome }}{% endif %}
+  &middot; cadastrada em {{ conta.criada_em|data }}
+</p>
+
+<div class="acoes" style="margin-bottom:18px">
+  {% if pode('operador') %}
+    <a class="botao" href="/contas/{{ conta.id }}/conectar">
+      {{ 'Conectar loja' if not conta.access_token_cripto else 'Reautorizar' }}
+    </a>
+    {% if conta.access_token_cripto %}
+      <form method="post" action="/contas/{{ conta.id }}/renovar" style="display:inline">
+        <button class="botao neutro" type="submit">Renovar token agora</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  <a class="botao neutro" href="/contas">Voltar</a>
+  <a class="botao neutro" href="/ajuda?canal={{ conta.canal }}">Passo a passo deste canal</a>
+</div>
+
+{% if erro_info %}
+  <div class="faixa erro">
+    <strong>Não consegui ler os dados da loja agora</strong>
+    {{ erro_info }}
+    <p>As chaves continuam guardadas. Se a mensagem fala de token, use "Renovar token agora";
+       se fala de permissão, falta liberar o escopo no painel da plataforma.</p>
+  </div>
+{% endif %}
+
+<div class="grade g2">
+  {# ------------------------------------------------ dados da plataforma #}
+  <div class="cartao">
+    <h3>O que a plataforma informa sobre a loja</h3>
+    {% if info and info.detalhes %}
+      <dl class="dados">
+        {% for k, v in info.detalhes.items() %}
+          <dt>{{ k }}</dt><dd>{{ v }}</dd>
+        {% endfor %}
+        <dt>Identificador da loja</dt><dd class="cru">{{ info.loja_id or '-' }}</dd>
+      </dl>
+    {% else %}
+      <p class="sub" style="margin:0">
+        Disponível só depois de conectar a loja. Estes dados vêm ao vivo da API
+        a cada vez que você abre esta página — não ficam guardados.
+      </p>
+    {% endif %}
+  </div>
+
+  {# -------------------------------------------------- credenciais e tokens #}
+  <div class="cartao">
+    <h3>Credenciais guardadas</h3>
+    <dl class="dados">
+      <dt>{{ conta.rotulo_client_id or 'Client ID' }}</dt>
+      <dd class="cru">{{ conta.client_id }}</dd>
+      <dt>{{ conta.rotulo_client_secret or 'Client Secret' }}</dt>
+      <dd class="cru">{{ conta.secret_mascarado or '****' }}</dd>
+      <dt>Token de acesso</dt>
+      <dd>
+        {% if conta.access_token_cripto %}
+          guardado, vence {{ conta.access_expira_em_dt|data }}
+          <span class="cru">({{ conta.access_expira_em_dt|falta }})</span>
+        {% else %}ainda não existe{% endif %}
+      </dd>
+      <dt>Autorização da loja</dt>
+      <dd>
+        {% if conta.refresh_expira_em_dt %}
+          vence {{ conta.refresh_expira_em_dt|data }}
+          <span class="cru">({{ conta.refresh_expira_em_dt|falta }})</span>
+        {% else %}-{% endif %}
+      </dd>
+      {% for k, v in (conta.extra or {}).items() %}
+        <dt>{{ k }}</dt><dd class="cru">{{ v }}</dd>
+      {% endfor %}
+      <dt>Última alteração</dt><dd>{{ conta.atualizada_em|data }}</dd>
+    </dl>
+    <p class="sub" style="margin-bottom:0">
+      O segredo aparece mascarado de propósito: ele vai criptografado para o banco e
+      o app só o descriptografa em memória, na hora de falar com a plataforma.
+    </p>
+  </div>
+</div>
+
+{# ---------------------------------------------------------- entendendo #}
+<h2>Entendendo os dois prazos</h2>
+<div class="grade g2">
+  <div class="cartao">
+    <h3>Token de acesso (curto)</h3>
+    <p class="sub" style="margin:0">
+      É a senha temporária de cada chamada. Vence em horas. O app renova sozinho usando
+      o refresh token, sem você fazer nada — por isso "Token vencido" não é um problema,
+      só um aviso de que a próxima consulta vai renovar.
+    </p>
+  </div>
+  <div class="cartao">
+    <h3>Autorização da loja (longo)</h3>
+    <p class="sub" style="margin:0">
+      É o "sim" que você deu ao aplicativo. Vale meses ou um ano, dependendo da plataforma.
+      Quando vence, nenhuma renovação automática funciona: é preciso clicar em
+      <b>Reautorizar</b> e aprovar de novo na tela da plataforma.
+    </p>
+  </div>
+</div>
+
+{# -------------------------------------------------------------- eventos #}
+{% if eventos %}
+<h2>Histórico desta conta</h2>
+<div class="cartao">
+  <div class="rolagem">
+    <table class="compacta">
+      <thead><tr><th>Quando</th><th>Evento</th><th>Detalhe</th></tr></thead>
+      <tbody>
+      {% for e in eventos %}
+        <tr>
+          <td>{{ e.criado_em|data }}</td>
+          <td>
+            <span class="selo {{ 'vermelho' if e.tipo == 'erro' else 'azul' }}">{{ e.tipo }}</span>
+          </td>
+          <td>
+            {{ e.detalhe }}
+            {% if e.usuario_email %}<br><span class="cru">por {{ e.usuario_email }}</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

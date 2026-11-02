@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Sistema-Ecom{% endblock %}</title>
+  <link rel="stylesheet" href="/static/estilo.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="linha">
+    <span class="marca">Sistema-Ecom</span>
+    {% if usuario %}
+      {% set rota = request.url.path %}
+      <nav>
+        <a href="/" class="{{ 'ativo' if rota == '/' }}">Painel</a>
+        <a href="/pedidos" class="{{ 'ativo' if rota == '/pedidos' }}">Pedidos</a>
+        <a href="/contas" class="{{ 'ativo' if rota.startswith('/contas') }}">Contas</a>
+        {% if pode('dono') %}
+          <a href="/usuarios" class="{{ 'ativo' if rota.startswith('/usuarios') }}">Usuários</a>
+        {% endif %}
+        <a href="/ajuda" class="{{ 'ativo' if rota == '/ajuda' }}">Como gerar as chaves</a>
+        <a href="/saude" class="{{ 'ativo' if rota == '/saude' }}">Diagnóstico</a>
+      </nav>
+      <div class="eu">
+        <span>{{ usuario.nome }}</span>
+        <span class="selo {{ 'azul' if usuario.papel == 'dono' else 'cinza' }}">
+          {{ rotulo_papel[usuario.papel] }}
+        </span>
+        <a href="/sair">Sair</a>
+      </div>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+  {% if aviso %}<div class="faixa ok">{{ aviso }}</div>{% endif %}
+  {% if erro %}<div class="faixa erro"><strong>Não deu certo</strong>{{ erro }}</div>{% endif %}
+
+  {% if criticos %}
+    <div class="faixa erro">
+      <strong>Configuração incompleta para produção</strong>
+      <ul style="margin:8px 0 0">
+        {% for c in criticos %}<li>{{ c }}</li>{% endfor %}
+      </ul>
+      <p>Veja o <a href="/saude">diagnóstico</a> para os detalhes.</p>
+    </div>
+  {% endif %}
+
+  {% if not supabase_ok %}
+    <div class="faixa atencao">
+      <strong>Supabase ainda não configurado</strong>
+      Preencha <code class="inline-cod">SUPABASE_URL</code> e
+      <code class="inline-cod">SUPABASE_SERVICE_KEY</code> no arquivo <code class="inline-cod">.env</code>.
+      O <a href="/saude">diagnóstico</a> mostra o que falta{% if usuario %}, e o painel aceita
+      <a href="{{ request.url.path }}?exemplo=1">dados de exemplo</a> enquanto isso{% endif %}.
+    </div>
+  {% elif erro_infra %}
+    <div class="faixa erro">
+      <strong>Problema ao falar com o Supabase</strong>
+      {{ erro_infra }}
+      <p>Confira o <a href="/saude">diagnóstico</a>.</p>
+    </div>
+  {% endif %}
+
+  {% if exemplo is defined and exemplo %}
+    <div class="faixa atencao">
+      <strong>Você está vendo dados de exemplo</strong>
+      Nada aqui é real — serve só para conhecer o painel antes de conectar as lojas.
+      <a href="{{ request.url.path }}">Ver dados reais</a>.
+    </div>
+  {% endif %}
+
+  {% block conteudo %}{% endblock %}
+</main>
+
+<footer class="pe">
+  Consulta ao vivo nas plataformas. No banco guardamos apenas as credenciais de acesso.
+</footer>
+
+</body>
+</html>

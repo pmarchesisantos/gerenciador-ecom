@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block titulo %}Diagnóstico - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Diagnóstico</h1>
+<p class="sub">O que está configurado e o que falta, antes de sair caçando erro no código.</p>
+
+<div class="cartao">
+  <h3>Configuração (.env)</h3>
+  <div class="rolagem">
+    <table class="compacta">
+      <thead><tr><th>Item</th><th>Situação</th><th>Valor</th><th>Onde encontrar</th></tr></thead>
+      <tbody>
+      {% for i in itens %}
+        <tr>
+          <td><b>{{ i.item }}</b></td>
+          <td><span class="selo {{ 'verde' if i.ok else 'vermelho' }}">{{ 'ok' if i.ok else 'falta' }}</span></td>
+          <td class="cru">{{ i.valor }}</td>
+          <td class="sub" style="margin:0">{{ i.ajuda }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="grade g2">
+  <div class="cartao">
+    <h3>Conexão com o Supabase</h3>
+    <p>
+      <span class="selo {{ 'verde' if banco_ok else 'vermelho' }}">
+        {{ 'funcionando' if banco_ok else 'com problema' }}
+      </span>
+    </p>
+    <p class="sub" style="margin:0">{{ banco_msg }}</p>
+    {% if not banco_ok %}
+      <p class="sub" style="margin-top:10px">
+        Se a mensagem fala de tabela ausente, rode o conteúdo de <code class="inline-cod">schema.sql</code>
+        no SQL Editor do Supabase. O passo a passo está em <a href="/ajuda">Como gerar as chaves</a>.
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="cartao">
+    <h3>Criptografia e fuso</h3>
+    <dl class="dados">
+      <dt>Chave de criptografia</dt>
+      <dd>
+        <span class="selo {{ 'verde' if chave_ok else 'vermelho' }}">
+          {{ 'ok' if chave_ok else 'ausente' }}
+        </span>
+        {{ chave }}
+      </dd>
+      <dt>Modo</dt>
+      <dd><span class="selo {{ 'azul' if producao else 'cinza' }}">
+        {{ 'produção' if producao else 'local' }}</span></dd>
+      <dt>Fuso horário</dt><dd>{{ fuso }}</dd>
+    </dl>
+    {% if not chave_ok %}
+      <div class="faixa erro" style="margin:12px 0 0">
+        <strong>Sem chave de criptografia o app não grava nem lê credenciais</strong>
+        {{ chave_erro }}
+      </div>
+    {% endif %}
+    <p class="sub" style="margin-bottom:0">
+      {% if producao %}
+        Em produção a chave <b>precisa</b> vir da variável <code class="inline-cod">CHAVE_CRIPTO</code>:
+        o disco é efêmero e um arquivo gerado some no próximo deploy, tornando ilegíveis
+        todos os segredos já guardados. Gere uma com
+        <code class="inline-cod">python -m app.cripto</code> e cadastre no provedor.
+      {% else %}
+        Local, a chave pode vir de arquivo. Faça backup de
+        <code class="inline-cod">data/chave.key</code> — sem ela os segredos guardados no
+        Supabase não abrem mais e as contas precisam ser cadastradas de novo.
+      {% endif %}
+    </p>
+  </div>
+</div>
+
+<div class="cartao">
+  <h3>URLs de retorno em uso</h3>
+  <p class="sub" style="margin-top:0">
+    É isso que precisa estar cadastrado em cada plataforma. Muda junto com
+    <code class="inline-cod">BASE_URL</code>.
+  </p>
+  <dl class="dados">
+    {% for nome, url in redirects.items() %}
+      <dt>{{ canais[nome].rotulo }}</dt><dd class="cru">{{ url }}</dd>
+    {% endfor %}
+  </dl>
+</div>
+
+{% endblock %}

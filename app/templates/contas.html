@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block titulo %}Contas - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Contas das plataformas</h1>
+<p class="sub">
+  Uma linha por loja. O que fica guardado no Supabase é só isto: o par de chaves do seu
+  aplicativo e os tokens de acesso, todos criptografados. Pedido nenhum é gravado.
+</p>
+
+<div class="acoes" style="margin-bottom:18px">
+  {% if pode('dono') %}
+    {% for nome, c in canais.items() %}
+      <a class="botao {{ '' if nome == 'mercadolivre' else 'vazio' }}" href="/contas/nova?canal={{ nome }}">
+        + {{ c.rotulo }}
+      </a>
+    {% endfor %}
+  {% endif %}
+  <a class="botao neutro" href="/ajuda">Como gerar as chaves</a>
+</div>
+
+{% if not pode('dono') %}
+  <div class="faixa info">
+    <strong>Seu acesso é {{ rotulo_papel[usuario.papel] }}</strong>
+    Você consulta as contas, mas cadastrar e remover credenciais é só para quem é dono.
+  </div>
+{% endif %}
+
+{% if lista %}
+  {% for c in lista %}
+    <div class="cartao" id="conta-{{ c.id }}">
+      <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start">
+        <div>
+          <h3 style="margin-bottom:4px">
+            {{ c.apelido }}
+            <span class="selo {{ c.situacao.cor }}">{{ c.situacao.rotulo }}</span>
+          </h3>
+          <p class="sub" style="margin:0">
+            {{ c.canal_rotulo }}
+            {% if c.loja_nome %}&middot; {{ c.loja_nome }}{% endif %}
+            {% if c.loja_id %}&middot; <span class="cru">{{ c.loja_id }}</span>{% endif %}
+          </p>
+          <p class="sub" style="margin:6px 0 0">{{ c.situacao.detalhe }}</p>
+        </div>
+        <div class="acoes">
+          <a class="botao vazio pequeno" href="/contas/{{ c.id }}">Detalhes</a>
+          {% if pode('operador') %}
+            {% if c.situacao.codigo in ('nao_conectada', 'autorizacao_expirada', 'chave_perdida') %}
+              <a class="botao pequeno" href="/contas/{{ c.id }}/conectar">Conectar loja</a>
+            {% else %}
+              <form method="post" action="/contas/{{ c.id }}/renovar" style="display:inline">
+                <button class="botao neutro pequeno" type="submit">Renovar token</button>
+              </form>
+              <a class="botao neutro pequeno" href="/contas/{{ c.id }}/conectar">Reautorizar</a>
+            {% endif %}
+          {% endif %}
+          {% if pode('dono') %}
+            <form method="post" action="/contas/{{ c.id }}/remover" style="display:inline"
+                  onsubmit="return confirm('Remover a conta {{ c.apelido }}? As chaves guardadas serão apagadas.');">
+              <button class="botao perigo pequeno" type="submit">Remover</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+
+      <dl class="dados" style="margin-top:14px">
+        <dt>{{ c.rotulo_client_id }}</dt><dd class="cru">{{ c.client_id }}</dd>
+        <dt>{{ c.rotulo_client_secret }}</dt><dd class="cru">{{ c.secret_mascarado }}</dd>
+        <dt>Token de acesso vence</dt>
+        <dd>{{ c.access_expira_em_dt|data }} <span class="cru">({{ c.access_expira_em_dt|falta }})</span></dd>
+        <dt>Autorização da loja vence</dt>
+        <dd>{{ c.refresh_expira_em_dt|data }} <span class="cru">({{ c.refresh_expira_em_dt|falta }})</span></dd>
+        {% if c.extra %}
+          {% for k, v in c.extra.items() %}
+            <dt>{{ k }}</dt><dd class="cru">{{ v }}</dd>
+          {% endfor %}
+        {% endif %}
+        <dt>Cadastrada em</dt><dd>{{ c.criada_em|data }}</dd>
+      </dl>
+    </div>
+  {% endfor %}
+{% elif not erro_infra and supabase_ok %}
+  <div class="cartao vazio">
+    <h3>Nenhuma conta cadastrada</h3>
+    <p>Comece pelo Mercado Livre: você cria o aplicativo e recebe as chaves na hora,<br>
+       sem passar por aprovação.</p>
+    <div class="acoes" style="justify-content:center">
+      {% if pode('dono') %}
+        <a class="botao" href="/contas/nova?canal=mercadolivre">Cadastrar Mercado Livre</a>
+      {% endif %}
+      <a class="botao vazio" href="/ajuda">Ler o passo a passo primeiro</a>
+    </div>
+  </div>
+{% endif %}
+
+<h2>URLs de retorno para cadastrar nas plataformas</h2>
+<div class="cartao">
+  <p class="sub" style="margin-top:0">
+    Toda plataforma exige que você registre, no painel dela, para onde ela pode devolver o
+    usuário depois da autorização. Cole exatamente estes endereços — qualquer diferença
+    (uma barra a mais, http em vez de https) faz a autorização falhar.
+  </p>
+  <dl class="dados">
+    {% for nome, url in redirects.items() %}
+      <dt>{{ canais[nome].rotulo }}</dt><dd class="cru">{{ url }}</dd>
+    {% endfor %}
+  </dl>
+  <p class="sub" style="margin-bottom:0">
+    O Mercado Livre exige <b>https</b> na URL de redirecionamento, então para testar local
+    você precisa de um túnel (ngrok, Cloudflare Tunnel) e ajustar <code class="inline-cod">BASE_URL</code> no .env.
+  </p>
+</div>
+
+{% endblock %}

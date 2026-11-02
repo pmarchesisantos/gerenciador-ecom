@@ -1,0 +1,9 @@
+.venv/
+data/
+legado/
+.env
+*.sql
+README.md
+verificar.py
+run.py
+.claude/

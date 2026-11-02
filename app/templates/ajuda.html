@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block titulo %}Como gerar as chaves - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Como gerar as chaves</h1>
+<p class="sub">
+  O caminho das pedras de cada plataforma, em ordem. Os endereços e nomes de campo mudam
+  de tempo em tempo — se a tela não bater com o texto, procure o campo equivalente.
+</p>
+
+<div class="faixa info">
+  <strong>Comece pelo Mercado Livre</strong>
+  É o único dos três em que você cria o aplicativo e recebe as chaves na hora, sem aprovação.
+  Shopee e TikTok Shop passam por análise do app antes de liberar o acesso de produção,
+  então vale protocolar os dois logo e seguir usando o ML enquanto espera.
+</div>
+
+{# =================================================================== 0 #}
+<details class="canal" open>
+  <summary><span>0. Supabase (o banco) — 5 minutos</span><span class="selo verde">na hora</span></summary>
+  <div class="corpo">
+    <ol class="passos">
+      <li>Crie a conta em <code>supabase.com</code> e depois um projeto novo (plano free).
+          Guarde a senha do banco que ele pede — não usamos ela aqui, mas você vai querer depois.</li>
+      <li>Espere o projeto subir. Vá em <b>Project Settings &rarr; Data API</b> e copie a
+          <b>Project URL</b>.</li>
+      <li>Em <b>Project Settings &rarr; API Keys</b>, copie a chave <b>service_role</b>.
+          Ela é secreta e dá acesso total ao banco: fica só no servidor, nunca no navegador.</li>
+      <li>No projeto, copie <code>.env.example</code> para <code>.env</code> e preencha
+          <code>SUPABASE_URL</code> e <code>SUPABASE_SERVICE_KEY</code>.</li>
+      <li>No Supabase, abra <b>SQL Editor &rarr; New query</b>, cole todo o conteúdo do arquivo
+          <code>schema.sql</code> e clique em <b>Run</b>. Isso cria as quatro tabelas.
+          Pode rodar de novo quando quiser: tudo usa <code>if not exists</code>.</li>
+      <li>Volte no <a href="/saude">diagnóstico</a>: tudo deve estar verde.</li>
+    </ol>
+    <p class="sub" style="margin-bottom:0">
+      As tabelas ficam com RLS ligada e sem nenhuma policy — ou seja, a chave pública
+      (anon) não lê nem escreve nada. Só o app, com a service_role, enxerga os dados.
+    </p>
+  </div>
+</details>
+
+{# ================================================================= 0.5 #}
+<details class="canal">
+  <summary><span>0.5. Publicar na Vercel</span><span class="selo azul">antes de conectar as lojas</span></summary>
+  <div class="corpo">
+    <p class="sub" style="margin-top:0">
+      Faça isto antes de cadastrar as chaves das plataformas: o endereço da Vercel é o
+      que vai nas URIs de redirect, e trocar depois dá retrabalho nos três painéis.
+    </p>
+    <ol class="passos">
+      <li>Suba o projeto para um repositório no GitHub e importe na Vercel.
+          Ela reconhece o <code>api/index.py</code> e o <code>vercel.json</code> sozinha.</li>
+      <li>Gere as duas chaves, uma vez só, e guarde:
+        <br><code>python -m app.cripto</code> &rarr; vira <code>CHAVE_CRIPTO</code>
+        <br><code>python -c "import secrets; print(secrets.token_urlsafe(48))"</code> &rarr; vira <code>CHAVE_SESSAO</code>
+      </li>
+      <li>Em <b>Settings &rarr; Environment Variables</b>, cadastre:
+        <code>SUPABASE_URL</code>, <code>SUPABASE_SERVICE_KEY</code>,
+        <code>SUPABASE_ANON_KEY</code>, <code>CHAVE_CRIPTO</code>,
+        <code>CHAVE_SESSAO</code>, <code>BASE_URL</code> e <code>FUSO</code>.</li>
+      <li><code>BASE_URL</code> é o endereço final do app, com https e sem barra no fim.
+          Ex.: <code>https://sistema-ecom.vercel.app</code></li>
+      <li>Faça o deploy e abra <a href="/saude">/saude</a> no endereço publicado.
+          Tudo precisa estar verde antes de seguir.</li>
+      <li>Na primeira visita, o app oferece criar o <b>primeiro acesso</b>, que nasce dono.
+          Depois disso essa tela some.</li>
+    </ol>
+    <div class="faixa erro" style="margin:14px 0 0">
+      <strong>CHAVE_CRIPTO não pode faltar em produção</strong>
+      O disco da Vercel é efêmero. Se o app gerasse a chave em arquivo, ela sumiria no
+      próximo deploy e <b>todas as credenciais já guardadas ficariam ilegíveis</b>. Por
+      isso, em produção, o app recusa funcionar sem essa variável em vez de gerar uma
+      chave nova em silêncio. Guarde a sua em lugar seguro — trocá-la obriga a
+      recadastrar todas as lojas.
+    </div>
+    <div class="faixa atencao" style="margin:12px 0 0">
+      <strong>Fique de olho no tempo de resposta</strong>
+      Cada consulta bate ao vivo nas APIs das lojas. O <code class="inline-cod">vercel.json</code>
+      pede 60 segundos por requisição, mas o limite real depende do seu plano — o gratuito
+      costuma ser bem menor. Se o painel começar a dar timeout em períodos longos, o
+      caminho é carregar um canal por vez, em vez de todos na mesma requisição.
+    </div>
+  </div>
+</details>
+
+{# =================================================================== 1 #}
+<details class="canal" {{ 'open' if aberto == 'mercadolivre' or not aberto }}>
+  <summary><span>1. Mercado Livre</span><span class="selo verde">chaves na hora</span></summary>
+  <div class="corpo">
+    <ol class="passos">
+      <li>Entre em <code>developers.mercadolivre.com.br</code> <b>logado na conta que vende</b>
+          e abra o <b>DevCenter</b> (em "Minhas aplicações").</li>
+      <li>Clique em criar aplicação e preencha:
+        <ul>
+          <li><b>Nome</b>: precisa ser único no Mercado Livre inteiro. Ex.: <code>painel-vendas-SEUNOME</code>.</li>
+          <li><b>Descrição curta</b>: até 150 caracteres. Aparece na tela de autorização.</li>
+          <li><b>URI de redirect</b>: cole <code>{{ redirects.mercadolivre }}</code></li>
+        </ul>
+      </li>
+      <li>Marque <b>PKCE</b> se a tela oferecer a opção. O app já manda os parâmetros de PKCE,
+          então funciona com a opção ligada ou desligada.</li>
+      <li>Em escopos/permissões, deixe marcado <b>read</b> (leitura). Para só consultar pedidos
+          não precisa de escrita.</li>
+      <li>Salve. Na listagem das aplicações aparecem o <b>App ID</b> e a <b>Secret Key</b>:
+          são o par que você cadastra aqui.</li>
+      <li>Em <a href="/contas/nova?canal=mercadolivre">Contas &rarr; Mercado Livre</a>, cole os dois,
+          salve e clique em <b>Conectar loja</b>. O ML vai pedir sua autorização e voltar para cá.</li>
+    </ol>
+    <div class="faixa atencao" style="margin:14px 0 0">
+      <strong>A URI de redirect do ML tem que ser https</strong>
+      <code class="inline-cod">http://127.0.0.1:8000</code> é recusado no cadastro.
+      Para testar na sua máquina, levante um túnel (ngrok, Cloudflare Tunnel), ponha a URL
+      do túnel em <code class="inline-cod">BASE_URL</code> no .env, reinicie o app e cadastre
+      no ML a URL de retorno que aparecer aqui.
+    </div>
+    <p class="sub" style="margin:12px 0 0">
+      Prazos: o token de acesso vale poucas horas e o app renova sozinho. O refresh token é de
+      <b>uso único</b> — cada renovação devolve um novo e invalida o anterior, o que é normal
+      e já está tratado. A autorização em si dura meses; quando vencer, clique em Reautorizar.
+    </p>
+  </div>
+</details>
+
+{# =================================================================== 2 #}
+<details class="canal" {{ 'open' if aberto == 'shopee' }}>
+  <summary><span>2. Shopee (Open Platform)</span><span class="selo amarelo">passa por aprovação</span></summary>
+  <div class="corpo">
+    <ol class="passos">
+      <li>Acesse <code>open.shopee.com</code> e crie a conta de desenvolvedor.
+          A Shopee costuma pedir dados da empresa — tenha o CNPJ em mão.</li>
+      <li>Em <b>App Management &rarr; App List</b>, crie um app novo. Escolha a
+          <b>região Brasil</b> na criação: isso define em qual ambiente ele vale.</li>
+      <li>Peça as permissões de <b>Order</b> (leitura de pedidos) e <b>Shop</b> (dados da loja).
+          Quanto menos permissão pedir, mais rápido costuma sair a análise.</li>
+      <li>Cadastre a URL de retorno: <code>{{ redirects.shopee }}</code></li>
+      <li>Copie <b>Partner ID</b> e <b>Partner Key</b>. Enquanto o app estiver em
+          <b>Developing</b>, essas chaves valem para o <b>sandbox</b>; quando a análise
+          aprovar, o status vira <b>Online</b> e aparecem as chaves de produção.</li>
+      <li>Em <a href="/contas/nova?canal=shopee">Contas &rarr; Shopee</a> cadastre as chaves. No campo
+          <b>Ambiente</b> escreva <code>sandbox</code> enquanto estiver testando, ou
+          <code>producao</code> depois da aprovação.</li>
+      <li>Clique em <b>Conectar loja</b> e autorize. A Shopee devolve o código junto com o
+          <code>shop_id</code> da loja, e o app já grava os dois.</li>
+    </ol>
+    <p class="sub" style="margin:12px 0 0">
+      Prazos: o token de acesso dura poucas horas (renovação automática) e a autorização da
+      loja vale cerca de um ano — depois o lojista precisa autorizar de novo.
+      Relatos de integradores falam em análise de app em torno de 24 h, mas isso não é
+      um prazo oficial: confirme no próprio console.
+    </p>
+  </div>
+</details>
+
+{# =================================================================== 3 #}
+<details class="canal" {{ 'open' if aberto == 'tiktok' }}>
+  <summary><span>3. TikTok Shop (Partner Center)</span><span class="selo amarelo">passa por aprovação</span></summary>
+  <div class="corpo">
+    <ol class="passos">
+      <li>Acesse <code>partner.tiktokshop.com</code> e crie a conta de desenvolvedor
+          (atenção: existe um Partner Center separado para os EUA — use o global para o Brasil).</li>
+      <li>Crie um app. Peça as permissões de <b>Order</b> e de <b>Return &amp; Refund</b> —
+          a segunda é o que permite ver devolução e estorno, que vivem em uma API separada.</li>
+      <li>Na aba <b>Authorization</b> do app, cadastre a URL de retorno:
+          <code>{{ redirects.tiktok }}</code></li>
+      <li>Na mesma aba, copie o <b>Service ID</b>. É ele que monta o link de autorização —
+          não o App Key.</li>
+      <li>Em <b>Basic Information</b>, copie <b>App Key</b> e <b>App Secret</b>.</li>
+      <li>Em <a href="/contas/nova?canal=tiktok">Contas &rarr; TikTok Shop</a> cadastre App Key,
+          App Secret e Service ID. Depois clique em <b>Conectar loja</b>.</li>
+      <li>Ao voltar, o app busca as lojas autorizadas e guarda o <b>shop_cipher</b> —
+          sem esse valor nenhuma consulta de pedido passa.</li>
+    </ol>
+    <p class="sub" style="margin:12px 0 0">
+      Se o mesmo app autorizar mais de uma loja, cadastre uma conta aqui para cada uma:
+      o app avisa em vez de escolher sozinho.
+    </p>
+  </div>
+</details>
+
+{# =================================================================== 4 #}
+<details class="canal">
+  <summary><span>Quando algo der errado</span><span class="selo cinza">solução de problemas</span></summary>
+  <div class="corpo">
+    <dl class="dados">
+      <dt>invalid_redirect_uri / redirect mismatch</dt>
+      <dd>A URL cadastrada na plataforma está diferente da que o app usa. Compare com a
+          lista em <a href="/contas">Contas</a>, caractere por caractere.</dd>
+      <dt>Token vencido</dt>
+      <dd>Normal. A próxima consulta renova sozinha. Se quiser forçar, use "Renovar token agora".</dd>
+      <dt>Autorização expirada</dt>
+      <dd>O refresh token passou da validade. Clique em <b>Reautorizar</b> e aprove de novo
+          na plataforma.</dd>
+      <dt>invalid_sign (Shopee / TikTok)</dt>
+      <dd>Normalmente é o relógio da máquina fora de hora, ou a chave secreta colada com
+          espaço no fim. Confira os dois.</dd>
+      <dt>Chave de criptografia trocada</dt>
+      <dd>O arquivo <code>data/chave.key</code> mudou ou foi perdido, então os segredos no
+          banco não abrem mais. Cadastre as contas de novo.</dd>
+      <dt>Permissão negada em devolução/estorno</dt>
+      <dd>O app não tem o escopo de return/refund aprovado. Os pedidos continuam aparecendo,
+          só não são reclassificados como devolvidos.</dd>
+    </dl>
+  </div>
+</details>
+
+{% endblock %}
