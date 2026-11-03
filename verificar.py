@@ -532,6 +532,33 @@ def etiquetas(c: TestClient) -> None:
     checar("sem pedido pronto, nao mostra a barra",
            "Imprimir etiquetas" not in r.text)
 
+    print("por que o canal nao imprime:")
+    from app.canais import CANAIS
+    for nome in ("tiktok", "shopee"):
+        checar(f"{nome} explica o motivo", bool(CANAIS[nome].motivo_sem_etiqueta))
+    checar("TikTok cita o passo que falta",
+           "arranjar o envio" in CANAIS["tiktok"].motivo_sem_etiqueta)
+
+    r = c.get("/pedidos?exemplo=1&envio=a_enviar")
+    checar("tela avisa sobre quem nao imprime",
+           "sem etiqueta disponível aqui" in r.text
+           or "aguardando despacho sem" in r.text)
+
+    print("grade larga:")
+    checar("tabela de pedidos pede a barra flutuante",
+           'class="rolagem" data-rolagem-lateral' in r.text)
+    checar("tabela tem largura minima para nao espremer",
+           'class="grade-pedidos"' in r.text)
+    checar("titulo longo nao estica a linha", 'class="item-linha"' in r.text)
+    css = c.get("/static/estilo.css").text
+    checar("cabecalho fica fixo ao rolar",
+           ".grade-pedidos thead th" in css and "position: sticky" in css)
+    checar("barra flutuante tem estilo",
+           ".barra-lateral-flutuante" in css and "position: fixed" in css)
+    base = c.get("/").text
+    checar("barra flutuante some quando nao precisa",
+           "barra.style.display = precisa" in base)
+
 
 def catalogo(c: TestClient) -> None:
     print("catalogo:")

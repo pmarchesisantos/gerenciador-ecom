@@ -93,6 +93,10 @@ class Shopee(CanalBase):
     rotulo_client_secret = "Partner Key"
     campos_extra = {"ambiente": "Ambiente (producao ou sandbox)"}
     exige_aprovacao = True
+    motivo_sem_etiqueta = (
+        "A Shopee ainda não está conectada. A impressão será implementada "
+        "quando o app for aprovado."
+    )
 
     # ------------------------------------------------------------------
     # assinatura

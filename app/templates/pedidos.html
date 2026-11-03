@@ -140,8 +140,8 @@
     </div>
   {% endif %}
 
-  <div class="rolagem">
-    <table>
+  <div class="rolagem" data-rolagem-lateral>
+    <table class="grade-pedidos">
       <thead><tr>
         {% if imprimiveis and pode('operador') %}<th style="width:34px"></th>{% endif %}
         <th>Quando</th><th>Canal / conta</th><th>Pedido</th><th>Comprador</th>
@@ -165,13 +165,13 @@
             {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="cru">{{ p.pedido_id }}</a>
             {% else %}<span class="cru">{{ p.pedido_id }}</span>{% endif %}
           </td>
-          <td>{{ p.comprador }}</td>
-          <td>
-            <span>
+          <td class="celula-comprador" title="{{ p.comprador }}">{{ p.comprador }}</td>
+          <td class="celula-itens">
             {% for i in p.itens %}
-              <div>{{ i.quantidade }}x {{ i.titulo }} <span class="cru">{{ i.sku }}</span></div>
+              <div class="item-linha" title="{{ i.quantidade }}x {{ i.titulo }} ({{ i.sku }})">
+                {{ i.quantidade }}x {{ i.titulo }} <span class="cru">{{ i.sku }}</span>
+              </div>
             {% else %}-{% endfor %}
-            </span>
           </td>
           <td><span class="selo {{ cor_grupo[p.grupo] }}">{{ p.grupo_rotulo }}</span></td>
           <td>
@@ -180,11 +180,10 @@
               {% if p.envio_id %}<br><span class="cru">{{ p.envio_id }}</span>{% endif %}
             </span>
           </td>
-          <td>
-            <span>
-              <span class="cru">{{ p.status_origem }}</span>
-              {% if p.envio_origem %}<br><span class="cru">{{ p.envio_origem }}</span>{% endif %}
-            </span>
+          <td class="celula-cru"
+              title="{{ p.status_origem }}{% if p.envio_origem %} / {{ p.envio_origem }}{% endif %}">
+            <span class="cru">{{ p.status_origem }}</span>
+            {% if p.envio_origem %}<br><span class="cru">{{ p.envio_origem }}</span>{% endif %}
           </td>
           <td class="num">{{ p.valor_produtos|moeda }}</td>
           <td class="num">{{ p.frete|moeda }}</td>
@@ -195,6 +194,29 @@
     </table>
   </div>
   </form>
+
+  {% set sem_etiqueta = lista|selectattr('envio', 'equalto', 'a_enviar')
+                             |rejectattr('pode_etiqueta')|list %}
+  {% if sem_etiqueta %}
+    <div class="faixa info" style="margin:14px 0 0">
+      <strong>
+        {{ sem_etiqueta|length }} pedido(s) aguardando despacho sem etiqueta
+        disponível aqui
+      </strong>
+      <ul>
+        {% for nome in sem_etiqueta|map(attribute='canal')|unique|list %}
+          <li>
+            <b>{{ canais_rotulo.get(nome, nome) }}</b>:
+            {% if canais[nome].motivo_sem_etiqueta %}
+              {{ canais[nome].motivo_sem_etiqueta }}
+            {% else %}
+              a plataforma ainda não gerou o documento para esses envios.
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
 
   {% if imprimiveis and pode('operador') %}
     <p class="sub" style="margin:14px 0 0">

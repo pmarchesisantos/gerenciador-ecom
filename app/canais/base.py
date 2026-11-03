@@ -70,6 +70,8 @@ class CanalBase(ABC):
 
     # True quando o canal ja sabe gerar etiqueta por aqui
     gera_etiqueta: bool = False
+    # explicacao para a tela quando nao sabe - melhor que sumir sem dizer nada
+    motivo_sem_etiqueta: str = ""
 
     async def etiquetas(self, conta: dict, pedidos: list):
         """Devolve um objeto Etiquetas com o arquivo pronto para baixar."""

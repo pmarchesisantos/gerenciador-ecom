@@ -213,6 +213,49 @@
       a.addEventListener('click', fecharGaveta);
     });
 
+    // ---- barra de rolagem lateral que acompanha a tela ----
+    // Numa tabela longa a barra nativa fica no rodape dela: para andar de
+    // lado voce teria que rolar ate o fim da lista primeiro. Esta copia fica
+    // presa na base da janela enquanto a tabela estiver a vista.
+    document.querySelectorAll('[data-rolagem-lateral]').forEach(function (caixa) {
+      var barra = document.createElement('div');
+      barra.className = 'barra-lateral-flutuante';
+      barra.style.display = 'none';
+      var espaco = document.createElement('div');
+      barra.appendChild(espaco);
+      document.body.appendChild(barra);
+
+      var sincronizando = false;
+      function espelhar(de, para) {
+        if (sincronizando) return;
+        sincronizando = true;
+        para.scrollLeft = de.scrollLeft;
+        requestAnimationFrame(function () { sincronizando = false; });
+      }
+      barra.addEventListener('scroll', function () { espelhar(barra, caixa); });
+      caixa.addEventListener('scroll', function () { espelhar(caixa, barra); });
+
+      function posicionar() {
+        var sobra = caixa.scrollWidth - caixa.clientWidth;
+        var r = caixa.getBoundingClientRect();
+        var altura = window.innerHeight;
+        // so aparece quando ha o que rolar, a tabela esta na tela, e a barra
+        // nativa dela ainda esta abaixo da dobra
+        var precisa = sobra > 1 && r.top < altura && r.bottom > 80 && r.bottom > altura;
+        barra.style.display = precisa ? 'block' : 'none';
+        if (!precisa) return;
+        barra.style.left = r.left + 'px';
+        barra.style.width = r.width + 'px';
+        espaco.style.width = caixa.scrollWidth + 'px';
+        barra.scrollLeft = caixa.scrollLeft;
+      }
+
+      window.addEventListener('scroll', posicionar, { passive: true });
+      window.addEventListener('resize', posicionar);
+      if (window.ResizeObserver) new ResizeObserver(posicionar).observe(caixa);
+      posicionar();
+    });
+
     // ---- tema ----
     // Sem escolha guardada, segue o sistema. Assim que a pessoa escolhe,
     // a escolha passa a valer sempre, mesmo que o sistema mude depois.

@@ -80,6 +80,12 @@ class TikTokShop(CanalBase):
     rotulo_client_secret = "App Secret"
     campos_extra = {"service_id": "Service ID (aba Authorization do app)"}
     exige_aprovacao = True
+    motivo_sem_etiqueta = (
+        "No TikTok a etiqueta só é gerada depois de arranjar o envio — uma ação "
+        "que altera o pedido na plataforma e avisa o comprador. Enquanto o "
+        "pacote está em TO_FULFILL, a API responde \"Documents couldn't be "
+        "printed before shipped\". Imprima pelo painel do TikTok por enquanto."
+    )
 
     # ------------------------------------------------------------------
     # assinatura
