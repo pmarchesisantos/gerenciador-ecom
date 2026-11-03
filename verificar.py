@@ -402,6 +402,15 @@ def senhas(c: TestClient) -> None:
            url_nova_senha().endswith("/nova-senha"), url_nova_senha())
 
     logar(c, "dono")
+    r = c.get("/saude")
+    checar("diagnostico mostra a url a cadastrar no Supabase",
+           url_nova_senha() in r.text and "Redirect URLs" in r.text)
+    checar("diagnostico avisa do fallback para localhost",
+           "localhost:3000" in r.text)
+    r = c.get("/ajuda")
+    checar("passo a passo mostra a url a cadastrar", url_nova_senha() in r.text)
+
+    logar(c, "dono")
 
 
 def responsivo(c: TestClient) -> None:

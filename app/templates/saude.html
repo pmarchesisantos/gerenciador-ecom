@@ -78,6 +78,28 @@
 </div>
 
 <div class="cartao">
+  <h3>Recuperação de senha</h3>
+  <p class="sub" style="margin-top:0">
+    Quando alguém pede "Esqueci minha senha", mandamos o Supabase devolver a
+    pessoa para o endereço abaixo. <b>Ele só é respeitado se estiver cadastrado
+    em Redirect URLs</b> — se não estiver, o Supabase ignora e usa a Site URL,
+    que por padrão é <code class="inline-cod">http://localhost:3000</code>.
+  </p>
+  <dl class="dados">
+    <dt>Para onde o link deve levar</dt><dd class="cru">{{ url_recuperacao }}</dd>
+    <dt>Onde cadastrar</dt>
+    <dd>Supabase &rarr; Authentication &rarr; URL Configuration &rarr; Redirect URLs</dd>
+    <dt>Site URL</dt>
+    <dd>Na mesma tela, deve ser <span class="cru">{{ url_recuperacao[:-11] }}</span></dd>
+  </dl>
+  <p class="sub" style="margin-bottom:0">
+    Sem SMTP próprio configurado, o envio nativo do Supabase tem limite baixo de
+    mensagens por hora. O passo a passo completo está em
+    <a href="/ajuda">Chaves</a>, seção 0.7.
+  </p>
+</div>
+
+<div class="cartao">
   <h3>URLs de retorno em uso</h3>
   <p class="sub" style="margin-top:0">
     É isso que precisa estar cadastrado em cada plataforma. Muda junto com

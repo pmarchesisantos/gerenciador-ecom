@@ -966,6 +966,7 @@ async def ajuda(request: Request, canal: str = ""):
             _periodo(None, None),
             aberto=canal if canal in CANAIS else "",
             redirects={n: redirect_uri(n) for n in CANAIS},
+            url_recuperacao=auth.url_nova_senha(),
         ),
     )
 
@@ -994,5 +995,6 @@ async def saude(request: Request):
             fuso=NOME_FUSO,
             producao=PRODUCAO,
             redirects={n: redirect_uri(n) for n in CANAIS},
+            url_recuperacao=auth.url_nova_senha(),
         ),
     )

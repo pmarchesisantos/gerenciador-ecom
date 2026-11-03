@@ -93,11 +93,16 @@
       funcionar de verdade faltam duas configurações no projeto.
     </p>
     <ol class="passos">
-      <li>Em <b>Authentication &rarr; URL Configuration</b>, coloque em
-          <b>Site URL</b> o endereço do app e adicione em <b>Redirect URLs</b>:
-          <br><code>{{ redirects.mercadolivre.rsplit('/', 2)[0] }}/nova-senha</code>
-          <br>Sem isso o link do e-mail devolve a pessoa para o lugar errado e o
-          token não chega na tela.</li>
+      <li>Em <b>Authentication &rarr; URL Configuration</b>, ajuste os dois campos:
+        <ul>
+          <li><b>Site URL</b>: <code>{{ url_recuperacao[:-11] }}</code></li>
+          <li><b>Redirect URLs</b>: adicione <code>{{ url_recuperacao }}</code></li>
+        </ul>
+        O Supabase só respeita o endereço que o app manda se ele estiver nessa
+        lista. Se não estiver, ele <b>ignora em silêncio</b> e usa a Site URL —
+        que vem como <code>http://localhost:3000</code> de fábrica. É por isso
+        que o link pode chegar apontando para localhost mesmo com o app no ar.
+      </li>
       <li>Em <b>Project Settings &rarr; Authentication &rarr; SMTP Settings</b>,
           configure um servidor de e-mail próprio (Resend, SendGrid, Amazon SES,
           ou o SMTP do seu provedor).</li>
