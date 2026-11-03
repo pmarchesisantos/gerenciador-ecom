@@ -99,7 +99,14 @@ class TikTokShop(CanalBase):
         caminho: str,
         extra_params: dict | None = None,
         corpo: dict | None = None,
+        com_cifra: bool = True,
     ) -> dict:
+        """com_cifra=False para os endpoints que recusam o shop_cipher.
+
+        A maioria das chamadas exige o cipher da loja, mas as de autorizacao
+        (que listam as lojas do app) respondem 400 se ele vier junto:
+        "The 'shop_cipher' query parameter is not required for this request".
+        """
         if not conta.get("_access"):
             raise ErroCanal("Conta TikTok sem access_token. Conecte de novo.")
 
@@ -108,7 +115,7 @@ class TikTokShop(CanalBase):
             "timestamp": int(_time.time()),
         }
         cifra = (conta.get("extra") or {}).get("shop_cipher")
-        if cifra:
+        if cifra and com_cifra:
             params["shop_cipher"] = cifra
         if extra_params:
             params.update(extra_params)
@@ -201,7 +208,9 @@ class TikTokShop(CanalBase):
     # ------------------------------------------------------------------
     async def lojas_autorizadas(self, conta: dict) -> list[dict]:
         """Precisa rodar logo depois da autorizacao: e daqui que sai o cipher."""
-        d = await self._chamar(conta, "/authorization/202309/shops")
+        d = await self._chamar(
+            conta, "/authorization/202309/shops", com_cifra=False
+        )
         return d.get("shops") or []
 
     async def pos_autorizacao(self, conta: dict) -> dict:
