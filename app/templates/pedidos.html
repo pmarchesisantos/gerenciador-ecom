@@ -138,6 +138,10 @@
         Imprimir etiquetas
       </button>
     </div>
+    <div class="faixa atencao" id="aviso-despacho" style="display:none; margin:0 0 14px">
+      <strong>Esta impressão também despacha os pedidos</strong>
+      <span id="texto-despacho"></span>
+    </div>
   {% endif %}
 
   <div class="rolagem" data-rolagem-lateral>
@@ -155,7 +159,9 @@
             <td>
               {% if p.pode_etiqueta %}
                 <input type="checkbox" name="pedido_id" value="{{ p.pedido_id }}"
-                       class="marca-etiqueta" data-conta="{{ p.canal }}|{{ p.conta }}">
+                       class="marca-etiqueta" data-conta="{{ p.canal }}|{{ p.conta }}"
+                       data-canal="{{ p.canal_rotulo }}"
+                       data-despacha="{{ '1' if canais[p.canal].despacha_ao_imprimir else '' }}">
               {% endif %}
             </td>
           {% endif %}
@@ -251,10 +257,18 @@
     if (!botao) return;
     var marcas = form.querySelectorAll('.marca-etiqueta');
 
+    var aviso = document.getElementById('aviso-despacho');
+    var textoAviso = document.getElementById('texto-despacho');
+    var despachaAgora = false;
+
     function atualizar() {
       var sel = form.querySelectorAll('.marca-etiqueta:checked');
       var lojas = new Set();
-      sel.forEach(function (m) { lojas.add(m.dataset.conta); });
+      var canaisQueDespacham = new Set();
+      sel.forEach(function (m) {
+        lojas.add(m.dataset.conta);
+        if (m.dataset.despacha) canaisQueDespacham.add(m.dataset.canal);
+      });
 
       botao.disabled = sel.length === 0 || lojas.size > 1;
       if (sel.length === 0) {
@@ -267,11 +281,37 @@
         conta.textContent = sel.length + (sel.length === 1 ? ' selecionado' : ' selecionados');
         conta.className = 'contagem';
       }
+
+      // em alguns canais a etiqueta so existe depois do despacho: imprimir
+      // marca o pedido como enviado e avisa o comprador
+      despachaAgora = canaisQueDespacham.size > 0 && sel.length > 0 && lojas.size === 1;
+      if (aviso) {
+        aviso.style.display = despachaAgora ? '' : 'none';
+        if (despachaAgora) {
+          var nomes = Array.from(canaisQueDespacham).join(', ');
+          textoAviso.textContent = ' No ' + nomes + ' a etiqueta só existe depois do '
+            + 'envio ser arranjado. Ao imprimir, ' + sel.length
+            + (sel.length === 1
+                ? ' pedido será marcado como despachado e o comprador será avisado.'
+                : ' pedidos serão marcados como despachados e os compradores serão avisados.');
+        }
+      }
+      botao.textContent = despachaAgora ? 'Despachar e imprimir' : 'Imprimir etiquetas';
       if (todos) {
         todos.checked = sel.length === marcas.length && marcas.length > 0;
         todos.indeterminate = sel.length > 0 && sel.length < marcas.length;
       }
     }
+
+    form.addEventListener('submit', function (ev) {
+      if (!despachaAgora) return;
+      var n = form.querySelectorAll('.marca-etiqueta:checked').length;
+      var ok = confirm(
+        'Isto vai despachar ' + n + (n === 1 ? ' pedido' : ' pedidos') +
+        ' na plataforma e avisar o comprador. Continuar?'
+      );
+      if (!ok) ev.preventDefault();
+    });
 
     marcas.forEach(function (m) { m.addEventListener('change', atualizar); });
     if (todos) {

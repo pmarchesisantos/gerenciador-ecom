@@ -718,7 +718,9 @@ textarea:focus { outline: none; border-color: var(--acento);
    limite, um titulo de produto sozinho estica a linha para cinco alturas e a
    grade vira uma parede.
    ======================================================================= */
-.grade-pedidos { min-width: 1180px; }
+.grade-pedidos { min-width: 1240px; }
+/* valor em dinheiro nunca quebra entre o R$ e o numero */
+td.num, th.num { white-space: nowrap; }
 .grade-pedidos thead th {
   position: sticky; top: 0; z-index: 2;
   background: var(--papel-2);

@@ -124,9 +124,10 @@ def pedidos(inicio: date, fim: date) -> list[Pedido]:
                 envio=envio,
                 envio_origem=envio,
                 envio_id=f"ENV{rnd.randrange(10000, 99999)}" if envio != ENVIO_NAO_APLICA else "",
-                # espelha a vida real: so o Mercado Livre entrega a etiqueta
-                # por API hoje, entao so ele aparece marcavel no exemplo
-                etiqueta_pronta=envio == ENVIO_A_ENVIAR and canal == "mercadolivre",
+                # espelha a vida real: ML e TikTok entregam etiqueta por API,
+                # a Shopee ainda nao
+                etiqueta_pronta=envio == ENVIO_A_ENVIAR
+                and canal in ("mercadolivre", "tiktok"),
                 itens=itens,
                 comprador=f"comprador{rnd.randrange(100, 999)}",
                 valor_produtos=produtos,

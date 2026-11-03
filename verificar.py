@@ -464,8 +464,11 @@ def etiquetas(c: TestClient) -> None:
     from app.canais.mercadolivre import MercadoLivre
     from app.modelos import ENVIO_A_ENVIAR, ENVIO_ENTREGUE, Pedido
 
-    checar("so o Mercado Livre gera etiqueta hoje",
-           [n for n, ch in CANAIS.items() if ch.gera_etiqueta] == ["mercadolivre"])
+    checar("ML e TikTok geram etiqueta; Shopee ainda nao",
+           sorted(n for n, ch in CANAIS.items() if ch.gera_etiqueta)
+           == ["mercadolivre", "tiktok"])
+    checar("so o TikTok despacha ao imprimir",
+           [n for n, ch in CANAIS.items() if ch.despacha_ao_imprimir] == ["tiktok"])
 
     def pedido(envio, cru, eid="99", pronta=False):
         from datetime import datetime
@@ -505,6 +508,79 @@ def etiquetas(c: TestClient) -> None:
     msg = MercadoLivre._erro_etiqueta(httpx.Response(400, json=corpo))
     checar("erro do ML vira texto legivel", "777" in msg and "entregue" in msg)
 
+    print("tiktok: despachar e imprimir:")
+    from app.canais.tiktok import HANDOVER_PADRAO, SEM_DESPACHO, TikTokShop
+
+    tt = TikTokShop()
+    checar("codigo de 'ainda nao despachado' conhecido", SEM_DESPACHO == 21042104)
+    checar("entrega padrao e levar ao ponto", HANDOVER_PADRAO == "DROP_OFF")
+
+    import httpx as _hx
+    from app.canais.base import ErroCanal as _Erro
+    try:
+        aio2 = __import__("asyncio")
+        class _Falso:
+            def __init__(self,*a,**k): pass
+            async def __aenter__(self): return self
+            async def __aexit__(self,*a): return False
+            async def get(self,*a,**k):
+                return _hx.Response(401, text='{"code":105005,"message":"Access denied"}')
+            async def post(self,*a,**k): return await self.get()
+        from unittest.mock import patch as _patch
+        with _patch.object(_hx, "AsyncClient", _Falso):
+            aio2.run(tt._chamar({"_access":"x","client_id":"1","_secret":"s","extra":{}},
+                                "/fulfillment/202309/packages/1/ship"))
+        checar("escopo faltando vira texto util", False, "nao levantou")
+    except _Erro as e:
+        checar("escopo faltando vira texto util",
+               "Fulfillment" in str(e) and "Reautorizar" in str(e), str(e)[:70])
+
+    import asyncio as aio2
+    try:
+        aio2.run(tt.etiquetas({"_access": "x", "client_id": "1", "_secret": "s"},
+                              [pedido(ENVIO_A_ENVIAR, "AWAITING_SHIPMENT", "", False)]))
+        checar("sem pacote, recusa", False, "nao levantou erro")
+    except Exception as e:
+        checar("sem pacote, recusa", "pacote" in str(e).lower(), str(e)[:60])
+
+    com_pacote = Pedido(canal="tiktok", conta="t", pedido_id="T1",
+                        criado_em=__import__("datetime").datetime.now(tz=FUSO_T),
+                        grupo=EFETIVADA, status_origem="AWAITING_SHIPMENT",
+                        envio=ENVIO_A_ENVIAR, envio_id="PKG1", etiqueta_pronta=True)
+    try:
+        aio2.run(tt.etiquetas({"_access": "x", "client_id": "1", "_secret": "s"},
+                              [com_pacote] * 21))
+        checar("recusa lote acima do teto", False, "nao levantou erro")
+    except Exception as e:
+        checar("recusa lote acima do teto", "maximo 20" in str(e), str(e)[:60])
+
+    # juntar PDFs de verdade, sem rede
+    import io
+    from pypdf import PdfWriter
+    def pdf_de(paginas):
+        w = PdfWriter()
+        for _ in range(paginas):
+            w.add_blank_page(width=200, height=300)
+        b = io.BytesIO(); w.write(b); return b.getvalue()
+
+    import httpx as hx
+    from unittest.mock import patch
+
+    class RespostaFake:
+        def __init__(self, c): self.status_code = 200; self.content = c
+    class ClienteFake:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url): return RespostaFake(pdf_de(1))
+
+    with patch.object(hx, "AsyncClient", ClienteFake):
+        juntado = aio2.run(TikTokShop._juntar(["a", "b", "c"]))
+    from pypdf import PdfReader
+    checar("tres etiquetas viram um PDF de tres paginas",
+           len(PdfReader(io.BytesIO(juntado)).pages) == 3)
+
+
     print("rota de etiquetas:")
     c.cookies.clear()
     r = c.post("/pedidos/etiquetas", data={"pedido_id": "1"}, follow_redirects=False)
@@ -529,15 +605,26 @@ def etiquetas(c: TestClient) -> None:
            r.text.index("<script>") > r.text.index("</title>"))
 
     r = c.get("/pedidos?exemplo=1&grupo=cancelada")
+    # a string "Imprimir etiquetas" tambem vive no script: checa o elemento
     checar("sem pedido pronto, nao mostra a barra",
-           "Imprimir etiquetas" not in r.text)
+           'id="barra-etiquetas"' not in r.text)
+    checar("sem pedido pronto, nao ha caixa de marcar",
+           'class="marca-etiqueta"' not in r.text)
+
+    r = c.get("/pedidos?exemplo=1&envio=a_enviar")
+    checar("a barra aparece quando ha o que imprimir",
+           'id="barra-etiquetas"' in r.text)
+    checar("caixa diz se o canal despacha ao imprimir",
+           'data-despacha="1"' in r.text)
+    checar("confirma antes de despachar",
+           "avisar o comprador. Continuar?" in r.text)
 
     print("por que o canal nao imprime:")
     from app.canais import CANAIS
     for nome in ("tiktok", "shopee"):
         checar(f"{nome} explica o motivo", bool(CANAIS[nome].motivo_sem_etiqueta))
-    checar("TikTok cita o passo que falta",
-           "arranjar o envio" in CANAIS["tiktok"].motivo_sem_etiqueta)
+    checar("TikTok avisa que imprimir tambem despacha",
+           "despacha e imprime" in CANAIS["tiktok"].motivo_sem_etiqueta)
 
     r = c.get("/pedidos?exemplo=1&envio=a_enviar")
     checar("tela avisa sobre quem nao imprime",
@@ -553,6 +640,8 @@ def etiquetas(c: TestClient) -> None:
     css = c.get("/static/estilo.css").text
     checar("cabecalho fica fixo ao rolar",
            ".grade-pedidos thead th" in css and "position: sticky" in css)
+    checar("valor em dinheiro nao quebra linha",
+           "td.num, th.num { white-space: nowrap; }" in css)
     checar("barra flutuante tem estilo",
            ".barra-lateral-flutuante" in css and "position: fixed" in css)
     base = c.get("/").text

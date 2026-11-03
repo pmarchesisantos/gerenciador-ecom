@@ -26,9 +26,11 @@ from urllib.parse import urlencode
 import httpx
 
 from app.canais.base import CanalBase, ErroCanal, dec
+from app.config import FUSO
 from app.config import FUSO, redirect_uri
 from app.modelos import (
     CANCELADA,
+    Etiquetas,
     DEVOLVIDA,
     EFETIVADA,
     ENVIO_A_ENVIAR,
@@ -60,6 +62,18 @@ MAPA_STATUS = {
 }
 
 
+# "nao foi despachado ainda" - o momento em que a etiqueta e gerada
+SEM_DESPACHO = 21042104
+
+# como o pacote e entregue a transportadora. DROP_OFF (voce leva ao ponto)
+# e o padrao; PICKUP exige agendar janela de coleta. Da para mudar por conta,
+# no campo extra "handover".
+HANDOVER_PADRAO = "DROP_OFF"
+
+# teto por lote, para nao estourar o tempo da requisicao: cada pedido aqui
+# custa duas ou tres chamadas, diferente do ML que resolve tudo em uma
+TETO_ETIQUETAS = 20
+
 MAPA_ENVIO = {
     "UNPAID": ENVIO_NAO_APLICA,
     "ON_HOLD": ENVIO_NAO_APLICA,
@@ -80,11 +94,11 @@ class TikTokShop(CanalBase):
     rotulo_client_secret = "App Secret"
     campos_extra = {"service_id": "Service ID (aba Authorization do app)"}
     exige_aprovacao = True
+    gera_etiqueta = True
+    despacha_ao_imprimir = True
     motivo_sem_etiqueta = (
-        "No TikTok a etiqueta só é gerada depois de arranjar o envio — uma ação "
-        "que altera o pedido na plataforma e avisa o comprador. Enquanto o "
-        "pacote está em TO_FULFILL, a API responde \"Documents couldn't be "
-        "printed before shipped\". Imprima pelo painel do TikTok por enquanto."
+        "No TikTok a etiqueta só existe depois de o envio ser arranjado. "
+        "O botão daqui faz as duas coisas: despacha e imprime."
     )
 
     # ------------------------------------------------------------------
@@ -141,6 +155,14 @@ class TikTokShop(CanalBase):
                 r = await c.post(url, params=params, headers=cabecalhos, content=corpo_texto)
 
         if r.status_code >= 400:
+            # 105005 e sempre escopo faltando; o texto cru nao diz qual
+            if "105005" in r.text:
+                raise ErroCanal(
+                    "O TikTok recusou por falta de permissao. Este endpoint exige "
+                    "um escopo que o app ainda nao tem. No Partner Center, abra o "
+                    "app, adicione o escopo de Fulfillment (envio e etiqueta), "
+                    "salve e clique em Reautorizar aqui - o token precisa ser novo."
+                )
             raise ErroCanal(f"TikTok {caminho} HTTP {r.status_code}: {r.text[:300]}")
         j = r.json()
         # o TikTok devolve 200 com code != 0 quando da errado
@@ -208,6 +230,104 @@ class TikTokShop(CanalBase):
                 "grant_type": "refresh_token",
             },
         )
+
+    # ------------------------------------------------------------------
+    # etiquetas
+    # ------------------------------------------------------------------
+    async def _documento(self, conta: dict, pacote: str) -> dict:
+        return await self._chamar(
+            conta,
+            f"/fulfillment/202309/packages/{pacote}/shipping_documents",
+            extra_params={"document_type": "SHIPPING_LABEL", "document_size": "A6"},
+        )
+
+    async def _despachar(self, conta: dict, pacote: str) -> None:
+        """Arranja o envio do pacote.
+
+        Isto ALTERA o pedido no TikTok e avisa o comprador de que saiu. E o
+        unico caminho: antes disso a plataforma nao gera o documento, e
+        responde "Documents couldn't be printed before shipped".
+        """
+        handover = (conta.get("extra") or {}).get("handover") or HANDOVER_PADRAO
+        await self._chamar(
+            conta,
+            f"/fulfillment/202309/packages/{pacote}/ship",
+            corpo={"handover_method": handover},
+        )
+
+    async def etiquetas(self, conta: dict, pedidos: list) -> Etiquetas:
+        """Despacha o que ainda nao saiu e devolve as etiquetas num PDF so.
+
+        Diferente do Mercado Livre, aqui cada pacote tem o seu documento e
+        nao existe chamada em lote - por isso juntamos os PDFs no fim.
+        """
+        alvos = [p for p in pedidos if p.envio_id]
+        fora = [p.pedido_id for p in pedidos if not p.envio_id]
+        if not alvos:
+            raise ErroCanal(
+                "Nenhum dos pedidos escolhidos tem pacote no TikTok. A etiqueta "
+                "sai do pacote, que a plataforma cria quando o pedido fica "
+                "pronto para despacho."
+            )
+        if len(alvos) > TETO_ETIQUETAS:
+            raise ErroCanal(
+                f"Selecione no maximo {TETO_ETIQUETAS} pedidos do TikTok por "
+                f"impressao. Voce escolheu {len(alvos)}."
+            )
+
+        urls: list[str] = []
+        for pedido in alvos:
+            try:
+                doc = await self._documento(conta, pedido.envio_id)
+            except ErroCanal as e:
+                if str(SEM_DESPACHO) not in str(e):
+                    raise
+                await self._despachar(conta, pedido.envio_id)
+                doc = await self._documento(conta, pedido.envio_id)
+
+            endereco = doc.get("doc_url") or doc.get("url")
+            if not endereco:
+                raise ErroCanal(
+                    f"O TikTok nao devolveu o arquivo do pedido {pedido.pedido_id}: "
+                    f"{str(doc)[:200]}"
+                )
+            urls.append(endereco)
+
+        conteudo = await self._juntar(urls)
+        hoje = datetime.now(tz=FUSO).strftime("%Y-%m-%d")
+        return Etiquetas(
+            conteudo=conteudo,
+            tipo="application/pdf",
+            nome=f"etiquetas-tiktok-{hoje}.pdf",
+            impressas=len(alvos),
+            ignorados=fora,
+            motivo_ignorados="pedido sem pacote criado no TikTok",
+        )
+
+    @staticmethod
+    async def _juntar(urls: list[str]) -> bytes:
+        """Baixa cada etiqueta e devolve um PDF unico."""
+        import io
+
+        from pypdf import PdfReader, PdfWriter
+
+        escritor = PdfWriter()
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as c:
+            for endereco in urls:
+                r = await c.get(endereco)
+                if r.status_code >= 400:
+                    raise ErroCanal(
+                        f"Nao consegui baixar uma das etiquetas ({r.status_code})."
+                    )
+                try:
+                    for pagina in PdfReader(io.BytesIO(r.content)).pages:
+                        escritor.add_page(pagina)
+                except Exception as e:
+                    raise ErroCanal(f"Uma das etiquetas veio ilegivel: {e}")
+
+        saida = io.BytesIO()
+        escritor.write(saida)
+        return saida.getvalue()
 
     # ------------------------------------------------------------------
     # leitura
@@ -335,6 +455,10 @@ class TikTokShop(CanalBase):
         if cru.get("cancel_reason"):
             origem = f"{status} / {cru['cancel_reason']}"
 
+        pacotes = cru.get("packages") or []
+        pacote = str(pacotes[0].get("id")) if pacotes else ""
+        envio = MAPA_ENVIO.get(status, ENVIO_NAO_APLICA)
+
         return Pedido(
             canal=self.nome,
             conta=conta["apelido"],
@@ -342,8 +466,13 @@ class TikTokShop(CanalBase):
             criado_em=self._quando(cru.get("create_time")),
             grupo=grupo,
             status_origem=origem,
-            envio=MAPA_ENVIO.get(status, ENVIO_NAO_APLICA),
+            envio=envio,
             envio_origem=status,
+            envio_id=pacote,
+            # no TikTok a etiqueta nao existe de antemao: e gerada no momento
+            # do despacho. "pronta" aqui significa "da para produzir daqui",
+            # nao "o documento ja existe".
+            etiqueta_pronta=bool(pacote) and envio == ENVIO_A_ENVIAR,
             itens=itens,
             comprador=cru.get("buyer_email") or "-",
             valor_produtos=dec(pag.get("sub_total")) or sum((i.valor_total for i in itens), dec(0)),

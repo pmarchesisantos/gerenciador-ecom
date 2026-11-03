@@ -72,6 +72,9 @@ class CanalBase(ABC):
     gera_etiqueta: bool = False
     # explicacao para a tela quando nao sabe - melhor que sumir sem dizer nada
     motivo_sem_etiqueta: str = ""
+    # True quando imprimir tambem despacha o pedido na plataforma: a tela
+    # precisa avisar, porque isso muda o pedido e notifica o comprador
+    despacha_ao_imprimir: bool = False
 
     async def etiquetas(self, conta: dict, pedidos: list):
         """Devolve um objeto Etiquetas com o arquivo pronto para baixar."""
