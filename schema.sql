@@ -181,3 +181,82 @@ create index if not exists conta_acessos_usuario_idx
 alter table public.conta_acessos enable row level security;
 
 grant all privileges on public.conta_acessos to service_role;
+
+
+-- ---------------------------------------------------------------------------
+-- produtos: o cadastro único. É aqui que o SKU passa a ter um dono.
+-- ---------------------------------------------------------------------------
+create table if not exists public.produtos (
+    id            uuid primary key default gen_random_uuid(),
+    sku           text not null,
+    titulo        text not null,
+    descricao     text,
+    marca         text,
+    preco         numeric(12, 2),
+    estoque       integer not null default 0,
+    peso_g        integer,
+    comprimento_cm integer,
+    largura_cm    integer,
+    altura_cm     integer,
+    ativo         boolean not null default true,
+    criado_por    uuid references public.perfis (id) on delete set null,
+    criado_em     timestamptz not null default now(),
+    atualizado_em timestamptz not null default now(),
+    unique (sku)
+);
+
+create index if not exists produtos_titulo_idx on public.produtos (titulo);
+
+drop trigger if exists produtos_toca on public.produtos;
+create trigger produtos_toca before update on public.produtos
+    for each row execute function public.toca_atualizada_em();
+
+-- ---------------------------------------------------------------------------
+-- produto_fotos: ponteiros para os arquivos no Supabase Storage.
+-- A imagem precisa ter URL pública: as plataformas buscam o arquivo por ela.
+-- ---------------------------------------------------------------------------
+create table if not exists public.produto_fotos (
+    id         uuid primary key default gen_random_uuid(),
+    produto_id uuid not null references public.produtos (id) on delete cascade,
+    caminho    text not null,
+    url        text not null,
+    ordem      integer not null default 0,
+    criado_em  timestamptz not null default now()
+);
+
+create index if not exists produto_fotos_produto_idx
+    on public.produto_fotos (produto_id, ordem);
+
+-- ---------------------------------------------------------------------------
+-- produto_anuncios: o de/para.
+--
+-- É a tabela que resolve a bagunça de SKU entre canais: o mesmo produto tem
+-- código diferente em cada plataforma, e é aqui que eles se encontram. Serve
+-- tanto para publicar quanto para agrupar o que já foi vendido.
+-- ---------------------------------------------------------------------------
+create table if not exists public.produto_anuncios (
+    id              uuid primary key default gen_random_uuid(),
+    produto_id      uuid not null references public.produtos (id) on delete cascade,
+    conta_id        uuid not null references public.contas (id) on delete cascade,
+    anuncio_id      text not null,
+    sku_canal       text,
+    url             text,
+    situacao        text,
+    sincronizado_em timestamptz,
+    criado_em       timestamptz not null default now(),
+    unique (conta_id, anuncio_id)
+);
+
+create index if not exists produto_anuncios_produto_idx
+    on public.produto_anuncios (produto_id);
+create index if not exists produto_anuncios_sku_idx
+    on public.produto_anuncios (sku_canal);
+
+-- mesma política das outras tabelas
+alter table public.produtos         enable row level security;
+alter table public.produto_fotos    enable row level security;
+alter table public.produto_anuncios enable row level security;
+
+grant all privileges on public.produtos         to service_role;
+grant all privileges on public.produto_fotos    to service_role;
+grant all privileges on public.produto_anuncios to service_role;

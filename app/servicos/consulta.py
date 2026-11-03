@@ -134,13 +134,20 @@ def _somar(destino: dict, p: Pedido) -> None:
     destino["valor"] += p.valor_total
 
 
-def resumir(pedidos: list[Pedido]) -> dict:
-    """Todos os numeros que o painel mostra, calculados de uma vez."""
+def resumir(pedidos: list[Pedido], mapa_sku: dict | None = None) -> dict:
+    """Todos os numeros que o painel mostra, calculados de uma vez.
+
+    mapa_sku vem do catalogo: {sku_na_plataforma: produto}. Com ele, o mesmo
+    item vendido em canais diferentes - e com codigo diferente em cada um -
+    soma numa linha so, em vez de aparecer tres vezes.
+    """
     por_grupo = {g: _bloco() for g in GRUPOS}
     por_canal: dict[str, dict] = defaultdict(_bloco)
     por_canal_grupo: dict[tuple[str, str], dict] = defaultdict(_bloco)
     por_dia: dict[date, dict] = defaultdict(_bloco)
-    por_sku: dict[str, dict] = defaultdict(lambda: {"titulo": "", "itens": 0, "valor": ZERO})
+    por_sku: dict[str, dict] = defaultdict(
+        lambda: {"titulo": "", "itens": 0, "valor": ZERO, "unificado": False}
+    )
 
     frete_total = ZERO
     for p in pedidos:
@@ -152,8 +159,13 @@ def resumir(pedidos: list[Pedido]) -> dict:
             _somar(por_dia[dia], p)
             frete_total += p.frete
             for item in p.itens:
-                alvo = por_sku[item.sku]
-                alvo["titulo"] = alvo["titulo"] or item.titulo
+                produto = (mapa_sku or {}).get(item.sku)
+                chave = produto["sku"] if produto else item.sku
+                alvo = por_sku[chave]
+                alvo["titulo"] = (
+                    produto["titulo"] if produto else (alvo["titulo"] or item.titulo)
+                )
+                alvo["unificado"] = bool(produto)
                 alvo["itens"] += item.quantidade
                 alvo["valor"] += item.valor_total
 
@@ -199,6 +211,7 @@ def resumir(pedidos: list[Pedido]) -> dict:
         "valor_perdido": perdido,
         "frete_efetivado": frete_total,
         "top_sku": [{"sku": s, **d} for s, d in top_sku],
+        "sku_unificados": sum(1 for _, d in por_sku.items() if d.get("unificado")),
         "faturamento": efetivadas["valor"],
         "itens_vendidos": efetivadas["itens"],
         "pendente_valor": por_grupo[PENDENTE]["valor"],

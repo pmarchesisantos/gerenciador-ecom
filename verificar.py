@@ -25,6 +25,8 @@ from app.main import app  # noqa: E402
 from app.modelos import CANCELADA, EFETIVADA, ESTORNADA, PENDENTE  # noqa: E402
 from app.servicos import consulta as servico_consulta  # noqa: E402
 from app.servicos import exemplo as servico_exemplo  # noqa: E402
+from app.config import FUSO as FUSO_T  # noqa: E402
+from decimal import Decimal  # noqa: E402
 
 falhas = 0
 
@@ -531,6 +533,93 @@ def etiquetas(c: TestClient) -> None:
            "Imprimir etiquetas" not in r.text)
 
 
+def catalogo(c: TestClient) -> None:
+    print("catalogo:")
+    from app.servicos import produtos as sp
+
+    # validacao pura, sem banco
+    try:
+        sp._limpar({"sku": "", "titulo": "x"})
+        checar("SKU obrigatorio", False, "nao levantou erro")
+    except sp.ErroProduto as e:
+        checar("SKU obrigatorio", "SKU" in str(e))
+    try:
+        sp._limpar({"sku": "A", "titulo": ""})
+        checar("titulo obrigatorio", False, "nao levantou erro")
+    except sp.ErroProduto as e:
+        checar("titulo obrigatorio", "título" in str(e).lower())
+    try:
+        sp._limpar({"sku": "A", "titulo": "x", "preco": "abc"})
+        checar("preco invalido e recusado", False, "nao levantou erro")
+    except sp.ErroProduto:
+        checar("preco invalido e recusado", True)
+    try:
+        sp._limpar({"sku": "A", "titulo": "x", "estoque": "-5"})
+        checar("estoque negativo e recusado", False, "nao levantou erro")
+    except sp.ErroProduto:
+        checar("estoque negativo e recusado", True)
+
+    limpo = sp._limpar({"sku": " A1 ", "titulo": " Bota ", "preco": "129,90",
+                        "estoque": "7", "ativo": True})
+    checar("preco com virgula vira numero", float(limpo["preco"]) == 129.90,
+           str(limpo["preco"]))
+    checar("espaco em volta e aparado",
+           limpo["sku"] == "A1" and limpo["titulo"] == "Bota")
+
+    # nome de arquivo das fotos
+    from app.armazenamento import _nome_seguro
+    checar("nome de arquivo fica seguro para URL",
+           _nome_seguro("Foto Boníta (1).JPG") == "Foto-Bonita-1-.JPG",
+           _nome_seguro("Foto Boníta (1).JPG"))
+
+    # unificacao de SKU no painel
+    from datetime import datetime
+    from app.modelos import EFETIVADA, ItemPedido, Pedido
+
+    def venda(canal, sku, titulo, valor):
+        return Pedido(canal=canal, conta="t", pedido_id=sku + canal,
+                      criado_em=datetime.now(tz=FUSO_T), grupo=EFETIVADA,
+                      status_origem="paid", valor_total=Decimal(valor),
+                      itens=[ItemPedido(sku=sku, titulo=titulo, quantidade=1,
+                                        valor_unitario=Decimal(valor))])
+
+    pedidos = [venda("mercadolivre", "ML-9", "Fone ML", "100"),
+               venda("tiktok", "TT-9", "Fone TikTok", "120")]
+
+    solto = servico_consulta.resumir(pedidos)
+    checar("sem catalogo, o mesmo produto aparece duas vezes",
+           len(solto["top_sku"]) == 2 and solto["sku_unificados"] == 0)
+
+    mapa = {"ML-9": {"sku": "FONE-01", "titulo": "Fone bluetooth"},
+            "TT-9": {"sku": "FONE-01", "titulo": "Fone bluetooth"}}
+    junto = servico_consulta.resumir(pedidos, mapa)
+    checar("com catalogo, soma numa linha so", len(junto["top_sku"]) == 1)
+    checar("usa o titulo do catalogo",
+           junto["top_sku"][0]["titulo"] == "Fone bluetooth")
+    checar("soma os valores dos dois canais",
+           junto["top_sku"][0]["valor"] == Decimal("220"))
+    checar("conta quantos foram unificados", junto["sku_unificados"] == 1)
+    checar("faturamento nao muda com a unificacao",
+           junto["faturamento"] == solto["faturamento"])
+
+    print("telas do catalogo:")
+    logar(c, "leitor")
+    r = c.get("/produtos")
+    checar("leitor ve a lista", r.status_code == 200)
+    checar("leitor nao ve botao de cadastrar", "/produtos/novo" not in r.text)
+    r = c.get("/produtos/novo", follow_redirects=False)
+    checar("leitor nao cadastra", r.status_code == 303)
+
+    logar(c, "operador")
+    r = c.get("/produtos/novo")
+    checar("operador cadastra", r.status_code == 200 and "SKU" in r.text)
+    r = c.post("/produtos/novo", data={"sku": "", "titulo": ""}, follow_redirects=False)
+    checar("cadastro vazio e recusado", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    logar(c, "dono")
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -545,6 +634,7 @@ def main() -> int:
         tema(c)
         senhas(c)
         etiquetas(c)
+        catalogo(c)
         responsivo(c)
         entrada(c)
     canais()

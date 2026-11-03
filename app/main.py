@@ -61,6 +61,7 @@ from app.modelos import (
 from app.servicos import consulta as servico_consulta
 from app.servicos import contas as servico_contas
 from app.servicos import exemplo as servico_exemplo
+from app.servicos import produtos as servico_produtos
 from app.servicos import usuarios as servico_usuarios
 
 PASTA = Path(__file__).resolve().parent
@@ -222,6 +223,15 @@ def _atalhos() -> dict:
         "trinta": hoje - timedelta(days=29),
         "mes": hoje.replace(day=1),
     }
+
+
+async def _mapa_sku() -> dict:
+    """De/para do catalogo. Falha em silencio: unificar e um bonus, nao
+    condicao para o painel existir."""
+    try:
+        return await servico_produtos.mapa_sku_canal()
+    except Exception:
+        return {}
 
 
 def _graficos(resumo: dict) -> dict:
@@ -553,7 +563,8 @@ async def painel(
     usuario = auth.usuario_da_sessao(request)
     periodo = _periodo(inicio, fim)
     dados, erro_infra = await _carregar(periodo, bool(exemplo), bool(atualizar), usuario)
-    resumo = servico_consulta.resumir(dados["pedidos"])
+    # o catalogo diz quais SKUs de plataforma sao o mesmo produto
+    resumo = servico_consulta.resumir(dados["pedidos"], await _mapa_sku())
 
     contas_resumo = []
     if not exemplo and not erro_infra:
@@ -690,6 +701,185 @@ async def pedidos_etiquetas(request: Request):
         media_type=arquivo.tipo,
         headers={"Content-Disposition": f'attachment; filename="{arquivo.nome}"'},
     )
+
+
+# ===========================================================================
+# catalogo de produtos
+# ===========================================================================
+@app.get("/produtos", response_class=HTMLResponse)
+async def produtos_lista(request: Request, q: str = ""):
+    erro_infra, lista, fotos, vinculos = "", [], {}, {}
+    try:
+        lista = await servico_produtos.listar(q)
+        fotos = await servico_produtos.contagem_fotos()
+        vinculos = await servico_produtos.contagem_anuncios()
+    except db.ErroBanco as e:
+        erro_infra = str(e)
+
+    return templates.TemplateResponse(
+        "produtos.html",
+        _base(
+            request,
+            _periodo(None, None),
+            lista=lista,
+            fotos=fotos,
+            vinculos=vinculos,
+            busca=q,
+            erro_infra=erro_infra,
+        ),
+    )
+
+
+@app.get("/produtos/novo", response_class=HTMLResponse)
+async def produto_novo(request: Request):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+    except auth.SemPermissao as e:
+        return _volta("/produtos", erro=str(e))
+    return templates.TemplateResponse(
+        "produto_detalhe.html",
+        _base(
+            request,
+            _periodo(None, None),
+            produto=None,
+            fotos=[],
+            vinculos=[],
+            contas=[],
+        ),
+    )
+
+
+@app.post("/produtos/novo")
+async def produto_criar(request: Request):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        form = dict(await request.form())
+        form["ativo"] = form.get("ativo") == "1"
+        novo = await servico_produtos.criar(form, usuario)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta("/produtos/novo", erro=str(e))
+    return _volta(
+        f"/produtos/{novo['id']}", aviso="Produto cadastrado. Agora adicione as fotos."
+    )
+
+
+@app.get("/produtos/{produto_id}", response_class=HTMLResponse)
+async def produto_detalhe(request: Request, produto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    erro_infra, produto, fotos, vinculos, contas = "", None, [], [], []
+    try:
+        produto = await servico_produtos.buscar(produto_id)
+        if produto:
+            fotos = await servico_produtos.fotos(produto_id)
+            vinculos = await servico_produtos.anuncios(produto_id)
+            contas = await servico_contas.resumo(usuario)
+    except db.ErroBanco as e:
+        erro_infra = str(e)
+
+    if not produto and not erro_infra:
+        return _volta("/produtos", erro="Produto não encontrado.")
+
+    return templates.TemplateResponse(
+        "produto_detalhe.html",
+        _base(
+            request,
+            _periodo(None, None),
+            produto=produto,
+            fotos=fotos,
+            vinculos=vinculos,
+            contas=contas,
+            contas_por_id={c["id"]: c for c in contas},
+            erro_infra=erro_infra,
+        ),
+    )
+
+
+@app.post("/produtos/{produto_id}")
+async def produto_salvar(request: Request, produto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        form = dict(await request.form())
+        form["ativo"] = form.get("ativo") == "1"
+        await servico_produtos.atualizar(produto_id, form, usuario)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    return _volta(f"/produtos/{produto_id}", aviso="Produto atualizado.")
+
+
+@app.post("/produtos/{produto_id}/foto")
+async def produto_foto(request: Request, produto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        form = await request.form()
+        arquivo = form.get("foto")
+        if arquivo is None or not getattr(arquivo, "filename", ""):
+            raise servico_produtos.ErroProduto("Escolha um arquivo de imagem.")
+        conteudo = await arquivo.read()
+        await servico_produtos.adicionar_foto(produto_id, arquivo.filename, conteudo)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    return _volta(f"/produtos/{produto_id}", aviso="Foto adicionada.")
+
+
+@app.post("/produtos/{produto_id}/foto/{foto_id}/remover")
+async def produto_foto_remover(request: Request, produto_id: str, foto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        await servico_produtos.remover_foto(foto_id)
+    except (auth.SemPermissao, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    return _volta(f"/produtos/{produto_id}", aviso="Foto removida.")
+
+
+@app.post("/produtos/{produto_id}/vincular")
+async def produto_vincular(
+    request: Request,
+    produto_id: str,
+    conta_id: str = Form(...),
+    anuncio_id: str = Form(...),
+    sku_canal: str = Form(""),
+):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        if not await servico_contas.pode_ver(usuario, conta_id):
+            raise auth.SemPermissao("Esta loja não faz parte do seu acesso.")
+        await servico_produtos.vincular(
+            produto_id, conta_id, anuncio_id, sku_canal, usuario
+        )
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    servico_consulta.limpar_cache()
+    return _volta(f"/produtos/{produto_id}", aviso="Anúncio vinculado.")
+
+
+@app.post("/produtos/{produto_id}/vinculo/{vinculo_id}/remover")
+async def produto_desvincular(request: Request, produto_id: str, vinculo_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        await servico_produtos.desvincular(vinculo_id)
+    except (auth.SemPermissao, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    servico_consulta.limpar_cache()
+    return _volta(f"/produtos/{produto_id}", aviso="Vínculo removido.")
+
+
+@app.post("/produtos/{produto_id}/remover")
+async def produto_remover(request: Request, produto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        await servico_produtos.remover(produto_id, usuario)
+    except (auth.SemPermissao, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    servico_consulta.limpar_cache()
+    return _volta("/produtos", aviso="Produto removido.")
 
 # ===========================================================================
 # contas

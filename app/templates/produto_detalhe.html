@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block titulo %}{{ produto.titulo if produto else 'Novo produto' }} - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+{% set novo = produto is none %}
+
+<h1>{{ produto.titulo if produto else 'Novo produto' }}</h1>
+<p class="sub">
+  {% if novo %}
+    Cadastre uma vez aqui. Depois você vincula aos anúncios que já existem nas
+    plataformas — ou publica a partir daqui, quando essa parte estiver pronta.
+  {% else %}
+    <span class="cru">{{ produto.sku }}</span>
+    &middot; cadastrado em {{ produto.criado_em|data }}
+    {% if not produto.ativo %}&middot; <span class="selo cinza">inativo</span>{% endif %}
+  {% endif %}
+</p>
+
+<div class="acoes" style="margin-bottom:18px">
+  <a class="botao neutro" href="/produtos">Voltar</a>
+  {% if not novo and pode('operador') %}
+    <form method="post" action="/produtos/{{ produto.id }}/remover" style="display:inline"
+          onsubmit="return confirm('Remover {{ produto.titulo }}? As fotos também serão apagadas.');">
+      <button class="botao perigo" type="submit">Remover produto</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="painel-2">
+
+  {# ------------------------------------------------------------- dados #}
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Dados do produto</h3>
+      <p class="sub">O SKU é a chave: é ele que liga este cadastro aos anúncios.</p>
+    </div>
+
+    <form method="post" action="{{ '/produtos/novo' if novo else '/produtos/' ~ produto.id }}">
+      <div class="grade g2" style="gap:12px">
+        <label class="campo">
+          SKU
+          <input type="text" name="sku" required style="min-width:100%"
+                 value="{{ produto.sku if produto else '' }}"
+                 {{ 'autofocus' if novo }}>
+        </label>
+        <label class="campo">
+          Marca
+          <input type="text" name="marca" style="min-width:100%"
+                 value="{{ produto.marca or '' if produto else '' }}">
+        </label>
+      </div>
+
+      <label class="campo" style="margin:12px 0">
+        Título
+        <input type="text" name="titulo" required style="min-width:100%"
+               value="{{ produto.titulo if produto else '' }}">
+      </label>
+
+      <div class="grade g2" style="gap:12px">
+        <label class="campo">
+          Preço
+          <input type="text" name="preco" style="min-width:100%" placeholder="0,00"
+                 value="{{ produto.preco if produto and produto.preco else '' }}">
+        </label>
+        <label class="campo">
+          Estoque
+          <input type="text" name="estoque" style="min-width:100%"
+                 value="{{ produto.estoque if produto else '0' }}">
+        </label>
+      </div>
+
+      <label class="campo" style="margin:12px 0">
+        Descrição
+        <textarea name="descricao" rows="4" style="min-width:100%; width:100%;
+                  padding:9px 12px; border:1px solid var(--borda-forte);
+                  border-radius:var(--raio-p); background:var(--papel);
+                  color:var(--tinta); font:inherit; font-size:14px"
+        >{{ produto.descricao or '' if produto else '' }}</textarea>
+      </label>
+
+      <h3 style="margin:18px 0 4px; font-size:13px; text-transform:uppercase;
+                 letter-spacing:.6px; color:var(--tinta-3)">Peso e medidas</h3>
+      <p class="sub" style="margin:0 0 12px">
+        As plataformas pedem isso para calcular frete. Pode preencher depois.
+      </p>
+      <div class="grade" style="grid-template-columns:repeat(4, 1fr); gap:10px">
+        <label class="campo">
+          Peso (g)
+          <input type="text" name="peso_g" style="min-width:0"
+                 value="{{ produto.peso_g or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          Compr. (cm)
+          <input type="text" name="comprimento_cm" style="min-width:0"
+                 value="{{ produto.comprimento_cm or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          Larg. (cm)
+          <input type="text" name="largura_cm" style="min-width:0"
+                 value="{{ produto.largura_cm or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          Alt. (cm)
+          <input type="text" name="altura_cm" style="min-width:0"
+                 value="{{ produto.altura_cm or '' if produto else '' }}">
+        </label>
+      </div>
+
+      <label style="display:flex; align-items:center; gap:9px; margin:16px 0;
+                    font-size:14px; cursor:pointer">
+        <input type="checkbox" name="ativo" value="1"
+               {{ 'checked' if novo or produto.ativo }}>
+        Produto ativo
+      </label>
+
+      {% if pode('operador') %}
+        <button class="botao" type="submit">
+          {{ 'Cadastrar produto' if novo else 'Salvar alterações' }}
+        </button>
+      {% else %}
+        <p class="sub" style="margin:0">
+          Seu acesso é de leitura: você consulta, mas não altera o cadastro.
+        </p>
+      {% endif %}
+    </form>
+  </div>
+
+  {# -------------------------------------------------------------- fotos #}
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Fotos</h3>
+      <p class="sub">
+        {% if novo %}
+          Disponível depois de cadastrar o produto.
+        {% else %}
+          Ficam no Supabase Storage com URL pública — é por ela que as
+          plataformas buscam a imagem na hora de publicar.
+        {% endif %}
+      </p>
+    </div>
+
+    {% if novo %}
+      <p class="sub" style="margin:0">Salve o produto primeiro.</p>
+    {% else %}
+      {% if fotos %}
+        <div class="galeria">
+          {% for f in fotos %}
+            <figure class="foto">
+              <img src="{{ f.url }}" alt="" loading="lazy">
+              {% if pode('operador') %}
+                <form method="post"
+                      action="/produtos/{{ produto.id }}/foto/{{ f.id }}/remover">
+                  <button class="botao perigo pequeno" type="submit">Remover</button>
+                </form>
+              {% endif %}
+            </figure>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="sub">Nenhuma foto ainda.</p>
+      {% endif %}
+
+      {% if pode('operador') %}
+        <form method="post" action="/produtos/{{ produto.id }}/foto"
+              enctype="multipart/form-data" style="margin-top:14px">
+          <label class="campo" style="margin-bottom:10px">
+            Adicionar foto
+            <input type="file" name="foto" accept="image/jpeg,image/png,image/webp"
+                   required style="min-width:100%">
+            <span class="sub" style="margin:0; font-weight:400; text-transform:none">
+              JPEG, PNG ou WebP, até 8 MB. Máximo de 10 por produto.
+            </span>
+          </label>
+          <button class="botao neutro" type="submit">Enviar foto</button>
+        </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+{# --------------------------------------------------------- de/para #}
+{% if not novo %}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Anúncios nas plataformas</h3>
+    <p class="sub">
+      O de/para. Enquanto este produto não estiver vinculado, as vendas dele
+      continuam aparecendo separadas por canal no painel.
+    </p>
+  </div>
+
+  {% if vinculos %}
+    <div class="rolagem">
+      <table class="compacta">
+        <thead><tr>
+          <th>Loja</th><th>Código do anúncio</th><th>SKU na plataforma</th>
+          <th>Vinculado em</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for v in vinculos %}
+          {% set c = contas_por_id.get(v.conta_id) if contas_por_id else None %}
+          <tr>
+            <td>
+              {% if c %}{{ c.canal_rotulo }} <span class="cru">{{ c.apelido }}</span>
+              {% else %}<span class="cru">loja removida</span>{% endif %}
+            </td>
+            <td class="cru">{{ v.anuncio_id }}</td>
+            <td class="cru">{{ v.sku_canal or '-' }}</td>
+            <td>{{ v.criado_em|data }}</td>
+            <td class="num">
+              {% if pode('operador') %}
+                <form method="post"
+                      action="/produtos/{{ produto.id }}/vinculo/{{ v.id }}/remover">
+                  <button class="botao neutro pequeno" type="submit">Desvincular</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="sub">Nenhum anúncio vinculado ainda.</p>
+  {% endif %}
+
+  {% if pode('operador') and contas %}
+    <form method="post" action="/produtos/{{ produto.id }}/vincular" style="margin-top:16px">
+      <div class="grade g3" style="gap:12px">
+        <label class="campo">
+          Loja
+          <select name="conta_id" required style="min-width:100%">
+            {% for c in contas %}
+              <option value="{{ c.id }}">{{ c.canal_rotulo }} — {{ c.apelido }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="campo">
+          Código do anúncio
+          <input type="text" name="anuncio_id" required style="min-width:100%"
+                 placeholder="MLB1234567890">
+        </label>
+        <label class="campo">
+          SKU na plataforma
+          <input type="text" name="sku_canal" style="min-width:100%"
+                 placeholder="opcional, se for diferente">
+        </label>
+      </div>
+      <div class="acoes" style="margin-top:12px">
+        <button class="botao" type="submit">Vincular anúncio</button>
+      </div>
+      <p class="sub" style="margin:12px 0 0">
+        O <b>SKU na plataforma</b> é o que aparece nos pedidos daquele canal. Se
+        ele for diferente do SKU daqui, preencha — é assim que o painel sabe que
+        as duas vendas são do mesmo produto.
+      </p>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

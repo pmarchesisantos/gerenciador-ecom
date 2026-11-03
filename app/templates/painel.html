@@ -260,8 +260,15 @@
         {% endfor %}
       </div>
       <p class="sub" style="margin:16px 0 0">
-        O mesmo produto pode ter SKU diferente em cada plataforma — nesse caso ele
-        aparece mais de uma vez. Unificar isso é o próximo passo natural do sistema.
+        {% if resumo.sku_unificados %}
+          {{ resumo.sku_unificados }} produto(s) aqui estão somados a partir do
+          <a href="/produtos">catálogo</a>, juntando o que cada plataforma chama
+          por um código diferente.
+        {% else %}
+          O mesmo produto tem código diferente em cada plataforma, então ele
+          aparece mais de uma vez aqui. Cadastre no <a href="/produtos">catálogo</a>
+          e vincule aos anúncios para somarem numa linha só.
+        {% endif %}
       </p>
     {% else %}
       <p class="sub" style="margin:0">Nenhum item vendido no período.</p>

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block titulo %}Produtos - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Produtos</h1>
+<p class="sub">
+  O cadastro único. É aqui que o mesmo produto, que tem código diferente em cada
+  plataforma, passa a ter um dono só.
+</p>
+
+<div class="cartao">
+  <form class="filtros" method="get" action="/produtos">
+    <label class="campo" style="flex:1">
+      Buscar
+      <input type="text" name="q" value="{{ busca }}" placeholder="SKU, título ou marca...">
+    </label>
+    <button class="botao" type="submit">Buscar</button>
+    {% if busca %}<a class="botao neutro" href="/produtos">Limpar</a>{% endif %}
+    {% if pode('operador') %}
+      <a class="botao vazio" href="/produtos/novo">+ Novo produto</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if lista %}
+<div class="cartao">
+  <div class="rolagem">
+    <table>
+      <thead><tr>
+        <th>SKU</th><th>Produto</th><th>Marca</th>
+        <th class="num">Preço</th><th class="num">Estoque</th>
+        <th class="num">Fotos</th><th class="num">Anúncios</th><th>Situação</th>
+      </tr></thead>
+      <tbody>
+      {% for p in lista %}
+        <tr>
+          <td class="cru">{{ p.sku }}</td>
+          <td><a href="/produtos/{{ p.id }}">{{ p.titulo }}</a></td>
+          <td>{{ p.marca or '-' }}</td>
+          <td class="num">{{ p.preco|moeda if p.preco else '-' }}</td>
+          <td class="num">{{ p.estoque|inteiro }}</td>
+          <td class="num">
+            {% set n = fotos.get(p.id, 0) %}
+            {% if n %}{{ n }}{% else %}<span class="selo cinza">sem foto</span>{% endif %}
+          </td>
+          <td class="num">
+            {% set v = vinculos.get(p.id, 0) %}
+            {% if v %}{{ v }}{% else %}<span class="selo cinza">solto</span>{% endif %}
+          </td>
+          <td>
+            <span class="selo {{ 'verde' if p.ativo else 'cinza' }}">
+              {{ 'ativo' if p.ativo else 'inativo' }}
+            </span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="sub" style="margin:14px 0 0">
+    <b>Anúncios</b> é quantas plataformas já conhecem este produto. Enquanto um
+    produto estiver <b>solto</b>, as vendas dele continuam aparecendo separadas
+    por canal no painel.
+  </p>
+</div>
+{% elif busca %}
+  <div class="cartao vazio">
+    <h3>Nenhum produto encontrado</h3>
+    <p>Nada com "{{ busca }}" no SKU, título ou marca.</p>
+    <a class="botao vazio" href="/produtos">Ver todos</a>
+  </div>
+{% elif not erro_infra and supabase_ok %}
+  <div class="cartao vazio">
+    <h3>Nenhum produto cadastrado</h3>
+    <p>Cadastre o primeiro e vincule aos anúncios que já existem nas plataformas.<br>
+       É isso que vai unificar as vendas no painel.</p>
+    {% if pode('operador') %}
+      <a class="botao" href="/produtos/novo">Cadastrar primeiro produto</a>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}
