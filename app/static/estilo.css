@@ -671,3 +671,24 @@ body.sem-lateral .faixa { max-width: 420px; margin: 20px auto 0; }
 .rodape-entrada {
   margin: 18px 0 0; text-align: center; font-size: 13px; color: var(--tinta-2);
 }
+
+/* ---- barra de ação da seleção de etiquetas --------------------------- */
+.barra-acao {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 14px; margin-bottom: 14px;
+  background: var(--acento-fundo); border: 1px solid var(--acento);
+  border-radius: var(--raio-p);
+}
+.barra-acao .escolher-todos {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13.5px; font-weight: 600; cursor: pointer; color: var(--acento-tinta);
+}
+.barra-acao .contagem { font-size: 13px; color: var(--tinta-2); margin-left: auto; }
+.barra-acao .contagem.alerta { color: var(--critical); font-weight: 600; }
+.barra-acao .botao:disabled { opacity: .5; cursor: not-allowed; }
+.barra-acao .botao:disabled:hover { background: var(--acento); }
+input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--acento); cursor: pointer; }
+@media (max-width: 760px) {
+  .barra-acao .contagem { margin-left: 0; width: 100%; }
+  .barra-acao .botao { width: 100%; }
+}

@@ -24,14 +24,14 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from app import auth, db
-from app.canais import CANAIS, ErroCanal
+from app.canais import CANAIS, ErroCanal, canal as pegar_canal
 from app.config import (
     CHAVE_SESSAO,
     SUPABASE_ANON_KEY,
@@ -619,6 +619,78 @@ async def pedidos(
     )
 
 
+
+@app.post("/pedidos/etiquetas")
+async def pedidos_etiquetas(request: Request):
+    """Gera o PDF de etiquetas dos pedidos marcados na tela.
+
+    A tela manda os numeros dos pedidos, nao os ids de envio: o servidor
+    reconsulta o periodo e resolve os ids por conta propria. Assim ninguem
+    imprime etiqueta de envio que nao esta no seu escopo so por mexer no
+    formulario.
+    """
+    usuario = auth.usuario_da_sessao(request)
+    form = await request.form()
+    escolhidos = set(form.getlist("pedido_id"))
+    periodo = _periodo(form.get("inicio"), form.get("fim"))
+    volta = f"/pedidos?inicio={periodo['inicio']}&fim={periodo['fim']}"
+
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        if not escolhidos:
+            raise ErroCanal("Selecione ao menos um pedido para imprimir.")
+
+        dados, erro_infra = await _carregar(periodo, False, False, usuario, com_envio=True)
+        if erro_infra:
+            raise ErroCanal(erro_infra)
+
+        alvos = [p for p in dados["pedidos"] if p.pedido_id in escolhidos]
+        if not alvos:
+            raise ErroCanal(
+                "Não encontrei esses pedidos no período. Atualize a lista e tente de novo."
+            )
+
+        # etiqueta e por conta: cada loja tem o seu documento na plataforma
+        contas_envolvidas = {(p.canal, p.conta) for p in alvos}
+        if len(contas_envolvidas) > 1:
+            nomes = ", ".join(sorted(c for _, c in contas_envolvidas))
+            raise ErroCanal(
+                f"Os pedidos escolhidos são de mais de uma loja ({nomes}). "
+                "Filtre por canal e imprima uma loja por vez."
+            )
+
+        canal_nome, apelido = contas_envolvidas.pop()
+        linha = next(
+            (
+                c
+                for c in await servico_contas.listar()
+                if c["canal"] == canal_nome and c["apelido"] == apelido
+            ),
+            None,
+        )
+        if not linha:
+            raise ErroCanal("Conta não encontrada.")
+        if not await servico_contas.pode_ver(usuario, linha["id"]):
+            raise auth.SemPermissao("Esta loja não faz parte do seu acesso.")
+
+        conta = await servico_contas.garantir_token(linha)
+        arquivo = await pegar_canal(canal_nome).etiquetas(conta, alvos)
+    except (auth.SemPermissao, ErroCanal, db.ErroBanco) as e:
+        return _volta(volta, erro=str(e))
+
+    await db.registrar_evento(
+        "etiqueta",
+        f"{arquivo.impressas} etiqueta(s) impressa(s)",
+        linha["id"],
+        canal_nome,
+        usuario,
+    )
+    return Response(
+        content=arquivo.conteudo,
+        media_type=arquivo.tipo,
+        headers={"Content-Disposition": f'attachment; filename="{arquivo.nome}"'},
+    )
+
 # ===========================================================================
 # contas
 # ===========================================================================
@@ -728,8 +800,6 @@ async def conta_detalhe(request: Request, conta_id: str):
         return _volta("/contas", erro="Conta não encontrada.")
 
     if linha and linha.get("access_token_cripto"):
-        from app.canais import canal as pegar_canal
-
         try:
             conta = await servico_contas.garantir_token(linha)
             info = await pegar_canal(linha["canal"]).info_conta(conta)

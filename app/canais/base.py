@@ -68,6 +68,15 @@ class CanalBase(ABC):
     async def listar_pedidos(self, conta: dict, inicio: date, fim: date) -> list[Pedido]:
         """Pedidos criados no periodo, ja normalizados."""
 
+    # True quando o canal ja sabe gerar etiqueta por aqui
+    gera_etiqueta: bool = False
+
+    async def etiquetas(self, conta: dict, pedidos: list):
+        """Devolve um objeto Etiquetas com o arquivo pronto para baixar."""
+        raise ErroCanal(
+            f"Impressao de etiqueta ainda nao implementada para {self.rotulo}."
+        )
+
     async def enriquecer_envio(self, conta: dict, pedidos: list) -> None:
         """Preenche o estado do envio, quando isso custa chamadas extras.
 

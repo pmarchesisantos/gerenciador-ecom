@@ -121,10 +121,29 @@
 </div>
 
 {% if lista %}
+{% set imprimiveis = lista|selectattr('pode_etiqueta')|list %}
 <div class="cartao">
+  <form method="post" action="/pedidos/etiquetas" id="form-etiquetas">
+  <input type="hidden" name="inicio" value="{{ periodo.inicio }}">
+  <input type="hidden" name="fim" value="{{ periodo.fim }}">
+
+  {% if imprimiveis and pode('operador') %}
+    <div class="barra-acao" id="barra-etiquetas">
+      <label class="escolher-todos">
+        <input type="checkbox" id="marcar-todos">
+        Selecionar os {{ imprimiveis|length }} com etiqueta pronta
+      </label>
+      <span class="contagem" id="contagem-etiquetas">nenhum selecionado</span>
+      <button class="botao" type="submit" id="botao-etiquetas" disabled>
+        Imprimir etiquetas
+      </button>
+    </div>
+  {% endif %}
+
   <div class="rolagem">
     <table>
       <thead><tr>
+        {% if imprimiveis and pode('operador') %}<th style="width:34px"></th>{% endif %}
         <th>Quando</th><th>Canal / conta</th><th>Pedido</th><th>Comprador</th>
         <th>Itens</th><th>Pagamento</th><th>Envio</th><th>Na plataforma</th>
         <th class="num">Produtos</th><th class="num">Frete</th><th class="num">Total</th>
@@ -132,6 +151,14 @@
       <tbody>
       {% for p in lista %}
         <tr>
+          {% if imprimiveis and pode('operador') %}
+            <td>
+              {% if p.pode_etiqueta %}
+                <input type="checkbox" name="pedido_id" value="{{ p.pedido_id }}"
+                       class="marca-etiqueta" data-conta="{{ p.canal }}|{{ p.conta }}">
+              {% endif %}
+            </td>
+          {% endif %}
           <td style="white-space:nowrap">{{ p.criado_em|data }}</td>
           <td>{{ p.canal_rotulo }}<br><span class="cru">{{ p.conta }}</span></td>
           <td>
@@ -167,6 +194,17 @@
       </tbody>
     </table>
   </div>
+  </form>
+
+  {% if imprimiveis and pode('operador') %}
+    <p class="sub" style="margin:14px 0 0">
+      Só dá para marcar pedidos cuja etiqueta a plataforma já gerou
+      ({{ imprimiveis|length }} de {{ lista|length }} aqui). Antes disso o
+      documento ainda não existe do lado deles. A impressão sai em um PDF único,
+      uma loja por vez — se misturar canais, filtre antes.
+    </p>
+  {% endif %}
+
   <p class="sub" style="margin:14px 0 0">
     <b>Pagamento</b> e <b>Envio</b> são dimensões diferentes: um pedido pode estar pago
     há dias e ainda não despachado. A coluna <b>Na plataforma</b> mostra o texto cru que
@@ -180,5 +218,48 @@
     <a class="botao vazio" href="/pedidos?{{ qp }}{{ ex }}">Limpar filtros</a>
   </div>
 {% endif %}
+
+<script>
+  (function () {
+    var form = document.getElementById('form-etiquetas');
+    if (!form) return;
+    var todos = document.getElementById('marcar-todos');
+    var botao = document.getElementById('botao-etiquetas');
+    var conta = document.getElementById('contagem-etiquetas');
+    if (!botao) return;
+    var marcas = form.querySelectorAll('.marca-etiqueta');
+
+    function atualizar() {
+      var sel = form.querySelectorAll('.marca-etiqueta:checked');
+      var lojas = new Set();
+      sel.forEach(function (m) { lojas.add(m.dataset.conta); });
+
+      botao.disabled = sel.length === 0 || lojas.size > 1;
+      if (sel.length === 0) {
+        conta.textContent = 'nenhum selecionado';
+        conta.className = 'contagem';
+      } else if (lojas.size > 1) {
+        conta.textContent = sel.length + ' de lojas diferentes — filtre por canal';
+        conta.className = 'contagem alerta';
+      } else {
+        conta.textContent = sel.length + (sel.length === 1 ? ' selecionado' : ' selecionados');
+        conta.className = 'contagem';
+      }
+      if (todos) {
+        todos.checked = sel.length === marcas.length && marcas.length > 0;
+        todos.indeterminate = sel.length > 0 && sel.length < marcas.length;
+      }
+    }
+
+    marcas.forEach(function (m) { m.addEventListener('change', atualizar); });
+    if (todos) {
+      todos.addEventListener('change', function () {
+        marcas.forEach(function (m) { m.checked = todos.checked; });
+        atualizar();
+      });
+    }
+    atualizar();
+  })();
+</script>
 
 {% endblock %}

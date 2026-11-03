@@ -21,6 +21,7 @@ from app.canais.base import CanalBase, ErroCanal, dec
 from app.config import FUSO, redirect_uri
 from app.modelos import (
     CANCELADA,
+    Etiquetas,
     EFETIVADA,
     ENVIO_A_ENVIAR,
     ENVIO_DESCONHECIDO,
@@ -69,6 +70,14 @@ MAPA_ENVIO = {
 TETO_ENVIOS = 200
 SIMULTANEAS = 8
 
+# so da para imprimir etiqueta de envio nesta situacao; nos outros a
+# plataforma ainda nao gerou o documento
+ENVIO_IMPRIMIVEL = "ready_to_ship"
+
+# o ML aceita varios envios na mesma chamada e devolve um PDF unico;
+# acima disso ele recusa o lote inteiro
+TETO_ETIQUETAS = 50
+
 
 class MercadoLivre(CanalBase):
     nome = "mercadolivre"
@@ -76,6 +85,7 @@ class MercadoLivre(CanalBase):
     rotulo_client_id = "App ID"
     rotulo_client_secret = "Secret Key"
     exige_aprovacao = False
+    gera_etiqueta = True
 
     # ------------------------------------------------------------------
     # autorizacao (OAuth 2.0 + PKCE)
@@ -153,6 +163,112 @@ class MercadoLivre(CanalBase):
                 "refresh_token": conta["_refresh"],
             }
         )
+
+    # ------------------------------------------------------------------
+    # etiquetas
+    # ------------------------------------------------------------------
+    async def etiquetas(self, conta: dict, pedidos: list) -> Etiquetas:
+        """Baixa as etiquetas de varios envios em um PDF so.
+
+        O Mercado Livre aceita a lista inteira numa chamada e devolve um
+        documento unico - nao precisamos juntar PDF nenhum aqui.
+
+        So entram envios em ready_to_ship: nos demais a etiqueta ainda nao
+        existe, e mandar um deles faz o ML recusar o lote todo. Os que ficam
+        de fora voltam na resposta para a tela explicar o motivo.
+        """
+        prontos, fora = [], []
+        for p in pedidos:
+            if p.envio_id and (p.envio_origem or "").startswith(ENVIO_IMPRIMIVEL):
+                prontos.append(p)
+            else:
+                fora.append(p.pedido_id)
+
+        if not prontos:
+            raise ErroCanal(
+                "Nenhum dos pedidos escolhidos tem etiqueta disponivel. No "
+                "Mercado Livre ela so aparece quando o envio chega em "
+                "'ready_to_ship' - antes disso a plataforma ainda nao gerou o "
+                "documento."
+            )
+        if len(prontos) > TETO_ETIQUETAS:
+            raise ErroCanal(
+                f"Selecione no maximo {TETO_ETIQUETAS} pedidos por impressao. "
+                f"Voce escolheu {len(prontos)}."
+            )
+
+        ids = ",".join(p.envio_id for p in prontos)
+        async with httpx.AsyncClient(timeout=60) as c:
+            r = await c.get(
+                f"{API}/shipment_labels",
+                params={"shipment_ids": ids, "response_type": "pdf"},
+                headers={"Authorization": f"Bearer {conta['_access']}"},
+            )
+
+        if r.status_code == 401:
+            raise ErroCanal("Token expirado ou invalido (401). Renove a conta.")
+        if r.status_code == 403:
+            raise ErroCanal(
+                "O Mercado Livre recusou por permissao (403). Confira o escopo "
+                "de 'Venda e envios' no DevCenter e clique em Reautorizar."
+            )
+        if r.status_code >= 400:
+            raise ErroCanal(self._erro_etiqueta(r))
+
+        tipo = r.headers.get("content-type", "application/pdf").split(";")[0]
+        if "pdf" not in tipo:
+            # as vezes o erro vem com 200 e corpo JSON
+            raise ErroCanal(f"Resposta inesperada do Mercado Livre: {r.text[:300]}")
+
+        hoje = datetime.now(tz=FUSO).strftime("%Y-%m-%d")
+        return Etiquetas(
+            conteudo=r.content,
+            tipo="application/pdf",
+            nome=f"etiquetas-mercadolivre-{hoje}.pdf",
+            impressas=len(prontos),
+            ignorados=fora,
+            motivo_ignorados=(
+                "a etiqueta so fica disponivel quando o envio chega em "
+                "'ready_to_ship'"
+            ),
+        )
+
+    @staticmethod
+    def _erro_etiqueta(r: httpx.Response) -> str:
+        """Traduz o erro do /shipment_labels, que vem detalhado por envio.
+
+        O corpo traz failed_shipments[], cada um com o pedido e o motivo. Sem
+        isso a tela mostraria so "400", e o motivo mais comum - o envio ainda
+        (ou ja) nao estar em situacao de imprimir - ficaria invisivel.
+        """
+        try:
+            j = r.json()
+        except Exception:
+            return f"Nao consegui baixar as etiquetas ({r.status_code}): {r.text[:300]}"
+
+        falhas = j.get("failed_shipments") or []
+        if not falhas:
+            return (
+                f"Nao consegui baixar as etiquetas ({r.status_code}): "
+                f"{j.get('message') or r.text[:300]}"
+            )
+
+        nao_imprimivel = [f for f in falhas if f.get("cause") == "NOT_PRINTABLE_STATUS"]
+        if len(nao_imprimivel) == len(falhas):
+            pedidos = ", ".join(str(f.get("order_id")) for f in falhas[:5])
+            resto = f" e mais {len(falhas) - 5}" if len(falhas) > 5 else ""
+            return (
+                f"O Mercado Livre nao imprime etiqueta destes envios no estado "
+                f"atual: pedido(s) {pedidos}{resto}. Isso acontece quando o "
+                f"envio ja saiu ou ja foi entregue - a etiqueta so existe "
+                f"enquanto ele esta aguardando despacho."
+            )
+
+        linhas = [
+            f"pedido {f.get('order_id')}: {f.get('message') or f.get('cause')}"
+            for f in falhas[:4]
+        ]
+        return "O Mercado Livre recusou " + str(len(falhas)) + " envio(s). " + "; ".join(linhas)
 
     # ------------------------------------------------------------------
     # leitura
@@ -248,6 +364,7 @@ class MercadoLivre(CanalBase):
             detalhe = j.get("substatus") or ""
             pedido.envio = MAPA_ENVIO.get(situacao, ENVIO_DESCONHECIDO)
             pedido.envio_origem = f"{situacao}/{detalhe}" if detalhe else situacao
+            pedido.etiqueta_pronta = situacao == ENVIO_IMPRIMIVEL
 
         await asyncio.gather(*(um(p) for p in alvos))
 

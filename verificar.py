@@ -456,6 +456,81 @@ def entrada(c: TestClient) -> None:
     logar(c, "dono")
 
 
+def etiquetas(c: TestClient) -> None:
+    print("etiquetas:")
+    from app.canais import CANAIS
+    from app.canais.mercadolivre import MercadoLivre
+    from app.modelos import ENVIO_A_ENVIAR, ENVIO_ENTREGUE, Pedido
+
+    checar("so o Mercado Livre gera etiqueta hoje",
+           [n for n, ch in CANAIS.items() if ch.gera_etiqueta] == ["mercadolivre"])
+
+    def pedido(envio, cru, eid="99", pronta=False):
+        from datetime import datetime
+        return Pedido(canal="mercadolivre", conta="t", pedido_id="P" + eid,
+                      criado_em=datetime.now(), grupo=EFETIVADA, status_origem="paid",
+                      envio=envio, envio_origem=cru, envio_id=eid, etiqueta_pronta=pronta)
+
+    pronto = pedido(ENVIO_A_ENVIAR, "ready_to_ship/ready_to_print", "1", True)
+    cedo = pedido(ENVIO_A_ENVIAR, "handling", "2")
+    tarde = pedido(ENVIO_ENTREGUE, "delivered", "3")
+
+    checar("so marca o que tem documento pronto",
+           pronto.pode_etiqueta and not cedo.pode_etiqueta and not tarde.pode_etiqueta)
+
+    ml = MercadoLivre()
+    try:
+        asyncio.get_event_loop()
+    except Exception:
+        pass
+    import asyncio as aio
+    try:
+        aio.run(ml.etiquetas({"_access": "x"}, [cedo, tarde]))
+        checar("recusa lote sem nenhum imprimivel", False, "nao levantou erro")
+    except Exception as e:
+        checar("recusa lote sem nenhum imprimivel", "ready_to_ship" in str(e))
+
+    try:
+        aio.run(ml.etiquetas({"_access": "x"}, [pronto] * 51))
+        checar("recusa lote acima do teto", False, "nao levantou erro")
+    except Exception as e:
+        checar("recusa lote acima do teto", "maximo 50" in str(e), str(e)[:60])
+
+    import httpx
+    corpo = {"failed_shipments": [
+        {"shipment_id": "1", "order_id": 777, "cause": "NOT_PRINTABLE_STATUS",
+         "message": "status is delivered"}]}
+    msg = MercadoLivre._erro_etiqueta(httpx.Response(400, json=corpo))
+    checar("erro do ML vira texto legivel", "777" in msg and "entregue" in msg)
+
+    print("rota de etiquetas:")
+    c.cookies.clear()
+    r = c.post("/pedidos/etiquetas", data={"pedido_id": "1"}, follow_redirects=False)
+    checar("exige login", r.status_code == 303 and "/entrar" in r.headers.get("location", ""))
+
+    logar(c, "leitor")
+    r = c.post("/pedidos/etiquetas", data={"pedido_id": "1"}, follow_redirects=False)
+    checar("leitor nao imprime", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    logar(c, "dono")
+    r = c.post("/pedidos/etiquetas", data={}, follow_redirects=False)
+    checar("selecao vazia e recusada", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    r = c.get("/pedidos?exemplo=1")
+    checar("tela oferece impressao quando ha pedido pronto",
+           "Imprimir etiquetas" in r.text and "marca-etiqueta" in r.text)
+    checar("titulo da pagina limpo",
+           "<title>Pedidos - Sistema-Ecom</title>" in r.text)
+    checar("script fica no corpo, nao no titulo",
+           r.text.index("<script>") > r.text.index("</title>"))
+
+    r = c.get("/pedidos?exemplo=1&grupo=cancelada")
+    checar("sem pedido pronto, nao mostra a barra",
+           "Imprimir etiquetas" not in r.text)
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -469,6 +544,7 @@ def main() -> int:
         envios(c)
         tema(c)
         senhas(c)
+        etiquetas(c)
         responsivo(c)
         entrada(c)
     canais()

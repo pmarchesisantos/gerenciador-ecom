@@ -134,6 +134,7 @@ class Pedido:
     envio: str = ENVIO_DESCONHECIDO
     envio_origem: str = ""        # o texto cru do envio, quando existe
     envio_id: str = ""            # id do envio na plataforma (para a etiqueta)
+    etiqueta_pronta: bool = False  # a plataforma ja gerou o documento?
     itens: list[ItemPedido] = field(default_factory=list)
     comprador: str = ""
     valor_produtos: Decimal = Decimal("0")
@@ -158,6 +159,11 @@ class Pedido:
     @property
     def envio_cor(self) -> str:
         return COR_ENVIO.get(self.envio, "cinza")
+
+    @property
+    def pode_etiqueta(self) -> bool:
+        """Pago, nao despachado, e com o documento ja gerado pela plataforma."""
+        return self.envio == ENVIO_A_ENVIAR and bool(self.envio_id) and self.etiqueta_pronta
 
     @property
     def quantidade(self) -> int:
@@ -189,6 +195,18 @@ class Tokens:
     expira_em_segundos: int | None = None
     refresh_expira_em_segundos: int | None = None
     extra: dict = field(default_factory=dict)
+
+
+@dataclass
+class Etiquetas:
+    """Arquivo de etiquetas pronto para o navegador baixar."""
+
+    conteudo: bytes
+    tipo: str                     # content-type
+    nome: str                     # nome sugerido do arquivo
+    impressas: int = 0
+    ignorados: list[str] = field(default_factory=list)   # pedido_id que ficou de fora
+    motivo_ignorados: str = ""
 
 
 @dataclass
