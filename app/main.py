@@ -708,11 +708,12 @@ async def pedidos_etiquetas(request: Request):
 # ===========================================================================
 @app.get("/produtos", response_class=HTMLResponse)
 async def produtos_lista(request: Request, q: str = ""):
-    erro_infra, lista, fotos, vinculos = "", [], {}, {}
+    erro_infra, lista, fotos, vinculos, variacoes = "", [], {}, {}, {}
     try:
         lista = await servico_produtos.listar(q)
         fotos = await servico_produtos.contagem_fotos()
         vinculos = await servico_produtos.contagem_anuncios()
+        variacoes = await servico_produtos.contagem_variacoes()
     except db.ErroBanco as e:
         erro_infra = str(e)
 
@@ -724,6 +725,7 @@ async def produtos_lista(request: Request, q: str = ""):
             lista=lista,
             fotos=fotos,
             vinculos=vinculos,
+            variacoes=variacoes,
             busca=q,
             erro_infra=erro_infra,
         ),
@@ -746,6 +748,8 @@ async def produto_novo(request: Request):
             fotos=[],
             vinculos=[],
             contas=[],
+            grade=[],
+            resumo_grade=servico_produtos.resumo_grade([]),
         ),
     )
 
@@ -757,6 +761,11 @@ async def produto_criar(request: Request):
         auth.exigir(usuario, auth.OPERADOR)
         form = dict(await request.form())
         form["ativo"] = form.get("ativo") == "1"
+        form["medidas_por_variacao"] = form.get("medidas_por_variacao") == "1"
+        bruto = await request.form()
+        form["atributos"] = servico_produtos.montar_atributos(
+            bruto.getlist("atributo_chave"), bruto.getlist("atributo_valor")
+        )
         novo = await servico_produtos.criar(form, usuario)
     except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
         return _volta("/produtos/novo", erro=str(e))
@@ -768,13 +777,14 @@ async def produto_criar(request: Request):
 @app.get("/produtos/{produto_id}", response_class=HTMLResponse)
 async def produto_detalhe(request: Request, produto_id: str):
     usuario = auth.usuario_da_sessao(request)
-    erro_infra, produto, fotos, vinculos, contas = "", None, [], [], []
+    erro_infra, produto, fotos, vinculos, contas, grade = "", None, [], [], [], []
     try:
         produto = await servico_produtos.buscar(produto_id)
         if produto:
             fotos = await servico_produtos.fotos(produto_id)
             vinculos = await servico_produtos.anuncios(produto_id)
             contas = await servico_contas.resumo(usuario)
+            grade = await servico_produtos.variacoes(produto_id)
     except db.ErroBanco as e:
         erro_infra = str(e)
 
@@ -791,6 +801,8 @@ async def produto_detalhe(request: Request, produto_id: str):
             vinculos=vinculos,
             contas=contas,
             contas_por_id={c["id"]: c for c in contas},
+            grade=grade,
+            resumo_grade=servico_produtos.resumo_grade(grade),
             erro_infra=erro_infra,
         ),
     )
@@ -803,11 +815,90 @@ async def produto_salvar(request: Request, produto_id: str):
         auth.exigir(usuario, auth.OPERADOR)
         form = dict(await request.form())
         form["ativo"] = form.get("ativo") == "1"
+        form["medidas_por_variacao"] = form.get("medidas_por_variacao") == "1"
+        bruto = await request.form()
+        form["atributos"] = servico_produtos.montar_atributos(
+            bruto.getlist("atributo_chave"), bruto.getlist("atributo_valor")
+        )
         await servico_produtos.atualizar(produto_id, form, usuario)
     except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
         return _volta(f"/produtos/{produto_id}", erro=str(e))
     return _volta(f"/produtos/{produto_id}", aviso="Produto atualizado.")
 
+
+@app.post("/produtos/{produto_id}/variacoes/gerar")
+async def produto_gerar_variacoes(
+    request: Request,
+    produto_id: str,
+    opcoes1: str = Form(""),
+    opcoes2: str = Form(""),
+):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        criadas = await servico_produtos.gerar_variacoes(
+            produto_id, opcoes1, opcoes2, usuario
+        )
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    aviso = (
+        f"{criadas} variação(ões) criadas."
+        if criadas
+        else "Nenhuma combinação nova — as que você listou já existem."
+    )
+    return _volta(f"/produtos/{produto_id}", aviso=aviso)
+
+
+@app.post("/produtos/{produto_id}/variacoes")
+async def produto_salvar_variacoes(request: Request, produto_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        form = await request.form()
+        ids = form.getlist("variacao_id")
+        ativas = set(form.getlist("variacao_ativa"))
+        linhas = [
+            {
+                "id": vid,
+                "sku": form.getlist("variacao_sku")[i],
+                "preco": form.getlist("variacao_preco")[i],
+                "preco_promo": form.getlist("variacao_promo")[i],
+                "estoque": form.getlist("variacao_estoque")[i],
+                "gtin": form.getlist("variacao_gtin")[i],
+                "ativa": vid in ativas,
+            }
+            for i, vid in enumerate(ids)
+        ]
+        await servico_produtos.salvar_variacoes(produto_id, linhas, usuario)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco, IndexError) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e) or "Formulário incompleto.")
+    servico_consulta.limpar_cache()
+    return _volta(f"/produtos/{produto_id}", aviso="Grade salva.")
+
+
+@app.post("/produtos/{produto_id}/variacoes/aplicar")
+async def produto_aplicar_variacoes(
+    request: Request, produto_id: str, preco: str = Form(""), estoque: str = Form("")
+):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        n = await servico_produtos.aplicar_a_todas(produto_id, preco, estoque, usuario)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    return _volta(f"/produtos/{produto_id}", aviso=f"Aplicado a {n} variação(ões).")
+
+
+@app.post("/produtos/{produto_id}/variacoes/{variacao_id}/remover")
+async def produto_remover_variacao(request: Request, produto_id: str, variacao_id: str):
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        await servico_produtos.remover_variacao(variacao_id)
+    except (auth.SemPermissao, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    servico_consulta.limpar_cache()
+    return _volta(f"/produtos/{produto_id}", aviso="Variação removida.")
 
 @app.post("/produtos/{produto_id}/foto")
 async def produto_foto(request: Request, produto_id: str):

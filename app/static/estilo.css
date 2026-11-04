@@ -768,3 +768,69 @@ td.num, th.num { white-space: nowrap; }
   box-shadow: 0 -2px 10px rgba(16, 21, 31, .10);
 }
 .barra-lateral-flutuante > div { height: 1px; }
+
+/* ===================================================== abas do produto ==
+   Mesma divisao que as plataformas usam no cadastro de anuncio. Os paineis
+   escondidos continuam no DOM de proposito: o formulario e um so, e salva
+   tudo de uma vez, independente da aba aberta.
+   ======================================================================= */
+.abas {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px;
+  border-bottom: 1px solid var(--borda); padding-bottom: 0;
+}
+.aba {
+  background: transparent; border: 0; border-bottom: 2px solid transparent;
+  padding: 10px 14px; cursor: pointer; font-family: inherit;
+  font-size: 14px; font-weight: 600; color: var(--tinta-2);
+  display: flex; align-items: center; gap: 7px;
+  transition: color var(--transicao), border-color var(--transicao);
+}
+.aba:hover { color: var(--tinta); }
+.aba.ativa { color: var(--acento); border-bottom-color: var(--acento); }
+.aba .selo { font-size: 10.5px; padding: 1px 7px; }
+
+.barra-salvar {
+  position: sticky; bottom: 0; z-index: 5;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px 16px; margin-bottom: 16px;
+  background: var(--papel); border: 1px solid var(--borda);
+  border-radius: var(--raio); box-shadow: var(--sombra-alta);
+}
+@media (max-width: 620px) {
+  .barra-salvar .botao { width: 100%; }
+  .barra-salvar .sub { font-size: 12px; }
+}
+
+textarea {
+  width: 100%; min-width: 0; padding: 10px 12px; box-sizing: border-box;
+  border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+  background: var(--papel); color: var(--tinta);
+  font-family: inherit; font-size: 14px; line-height: 1.5; resize: vertical;
+}
+
+/* texto de apoio dentro de um rotulo: nao herda o caixa-alta dele */
+.dica {
+  display: block; margin-top: 2px;
+  font-size: 12px; font-weight: 400; line-height: 1.45;
+  text-transform: none; letter-spacing: 0; color: var(--tinta-3);
+}
+
+.marca-caixa {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 14px; cursor: pointer;
+}
+
+.linha-atributo {
+  display: grid; grid-template-columns: minmax(140px, 1fr) minmax(160px, 1.6fr) auto;
+  gap: 10px; margin-bottom: 10px;
+}
+.linha-atributo input { min-width: 0; }
+@media (max-width: 620px) {
+  .linha-atributo { grid-template-columns: 1fr; }
+}
+
+.galeria .foto { position: relative; }
+.galeria .foto figcaption { position: absolute; top: 8px; left: 8px; }
+
+/* campo dentro de celula de tabela nao precisa da altura cheia */
+table input[type=text] { height: 32px; font-size: 13px; }

@@ -75,13 +75,24 @@ async def contagem_anuncios() -> dict[str, int]:
 
 
 async def mapa_sku_canal() -> dict[str, dict]:
-    """{sku_na_plataforma: produto} — usado para unificar o que foi vendido."""
-    vinculos = await db.selecionar("produto_anuncios")
-    if not vinculos:
-        return {}
+    """{sku_na_plataforma: produto base} — usado para unificar o que foi vendido.
+
+    Entram tres coisas: o SKU cadastrado no vinculo, o codigo do anuncio, e o
+    SKU de cada variacao. O ultimo e o que mais aparece nos pedidos - quem
+    vende cor e tamanho recebe AZERA-BRANCO-37, nao AZERA. Todos apontam para
+    o produto base, porque o painel agrupa por produto, nao por numeracao.
+    """
     produtos = {p["id"]: p for p in await db.selecionar("produtos")}
+    if not produtos:
+        return {}
+
     saida: dict[str, dict] = {}
-    for v in vinculos:
+    for v in await db.selecionar("produto_variacoes"):
+        produto = produtos.get(v["produto_id"])
+        if produto and v.get("sku"):
+            saida[str(v["sku"]).strip()] = produto
+
+    for v in await db.selecionar("produto_anuncios"):
         produto = produtos.get(v["produto_id"])
         if not produto:
             continue
@@ -121,19 +132,47 @@ def _limpar(dados: dict) -> dict:
     if estoque < 0:
         raise ErroProduto("O estoque não pode ser negativo.")
 
+    def texto(campo: str, limite: int = 120) -> str | None:
+        return ((dados.get(campo) or "").strip() or None) if dados.get(campo) is not None else None
+
     return {
         "sku": sku,
         "titulo": titulo,
-        "descricao": (dados.get("descricao") or "").strip() or None,
-        "marca": (dados.get("marca") or "").strip() or None,
+        "descricao": texto("descricao"),
+        "marca": texto("marca"),
+        "categoria": texto("categoria"),
+        "condicao": texto("condicao") or "novo",
         "preco": float(preco) if preco is not None else None,
         "estoque": estoque,
         "peso_g": _numero(dados.get("peso_g"), "Peso", inteiro=True),
         "comprimento_cm": _numero(dados.get("comprimento_cm"), "Comprimento", inteiro=True),
         "largura_cm": _numero(dados.get("largura_cm"), "Largura", inteiro=True),
         "altura_cm": _numero(dados.get("altura_cm"), "Altura", inteiro=True),
+        "medidas_por_variacao": bool(dados.get("medidas_por_variacao")),
+        "eixo1_nome": texto("eixo1_nome"),
+        "eixo2_nome": texto("eixo2_nome"),
+        # fiscais
+        "ncm": texto("ncm"),
+        "cest": texto("cest"),
+        "origem_fiscal": texto("origem_fiscal"),
+        "cfop_dentro": texto("cfop_dentro"),
+        "cfop_fora": texto("cfop_fora"),
+        "csosn": texto("csosn"),
+        "unidade": texto("unidade") or "UN",
+        "pis_cofins_cst": texto("pis_cofins_cst"),
+        "tributos_pct": float(_numero(dados.get("tributos_pct"), "% de tributos") or 0) or None,
         "ativo": bool(dados.get("ativo")),
     }
+
+
+def montar_atributos(chaves: list[str], valores: list[str]) -> dict:
+    """Pares da aba Especificacao. Linha sem nome e descartada."""
+    saida: dict[str, str] = {}
+    for chave, valor in zip(chaves, valores):
+        nome = (chave or "").strip()
+        if nome:
+            saida[nome[:60]] = (valor or "").strip()[:300]
+    return saida
 
 
 async def criar(dados: dict, usuario: dict) -> dict:
@@ -141,6 +180,8 @@ async def criar(dados: dict, usuario: dict) -> dict:
     if await por_sku(campos["sku"]):
         raise ErroProduto(f"Já existe um produto com o SKU {campos['sku']}.")
     campos["criado_por"] = usuario.get("id")
+    if dados.get("atributos") is not None:
+        campos["atributos"] = dados["atributos"]
     novo = await db.inserir("produtos", campos)
     await db.registrar_evento(
         "produto", f"produto {campos['sku']} cadastrado", usuario=usuario
@@ -153,6 +194,8 @@ async def atualizar(produto_id: str, dados: dict, usuario: dict) -> dict:
     outro = await por_sku(campos["sku"])
     if outro and outro["id"] != produto_id:
         raise ErroProduto(f"O SKU {campos['sku']} já é de outro produto.")
+    if dados.get("atributos") is not None:
+        campos["atributos"] = dados["atributos"]
     atualizado = await db.atualizar("produtos", {"id": f"eq.{produto_id}"}, campos)
     await db.registrar_evento(
         "produto", f"produto {campos['sku']} alterado", usuario=usuario
@@ -174,6 +217,183 @@ async def remover(produto_id: str, usuario: dict) -> None:
     await db.registrar_evento(
         "produto", f"produto {produto.get('sku')} removido", usuario=usuario
     )
+
+
+# ---------------------------------------------------------------------------
+# variacoes
+# ---------------------------------------------------------------------------
+async def variacoes(produto_id: str) -> list[dict]:
+    return await db.selecionar(
+        "produto_variacoes", {"produto_id": f"eq.{produto_id}"}, ordem="ordem.asc"
+    )
+
+
+async def contagem_variacoes() -> dict[str, int]:
+    saida: dict[str, int] = {}
+    for v in await db.selecionar("produto_variacoes"):
+        saida[v["produto_id"]] = saida.get(v["produto_id"], 0) + 1
+    return saida
+
+
+def _opcoes(texto: str) -> list[str]:
+    """Quebra "Branco, Preto, Preto/Branco" numa lista limpa e sem repetidos."""
+    vistos, saida = set(), []
+    for parte in (texto or "").replace(";", ",").replace(chr(10), ",").split(","):
+        valor = parte.strip()
+        if valor and valor.lower() not in vistos:
+            vistos.add(valor.lower())
+            saida.append(valor)
+    return saida
+
+
+def combinar(opcoes1: list[str], opcoes2: list[str]) -> list[tuple[str, str | None]]:
+    """Produto cartesiano dos dois eixos, na ordem em que foram escritos."""
+    if not opcoes1:
+        return []
+    if not opcoes2:
+        return [(a, None) for a in opcoes1]
+    return [(a, b) for a in opcoes1 for b in opcoes2]
+
+
+def sku_da_variacao(base: str, valores: tuple) -> str:
+    """AZERA + (Branco, 37) -> AZERA-BRANCO-37, como no padrao da Shopee."""
+    import re
+    import unicodedata
+
+    partes = [base] + [v for v in valores if v]
+    limpo = []
+    for parte in partes:
+        texto = unicodedata.normalize("NFKD", str(parte))
+        texto = texto.encode("ascii", "ignore").decode().upper()
+        texto = re.sub(r"[^A-Z0-9]+", "-", texto).strip("-")
+        if texto:
+            limpo.append(texto)
+    return "-".join(limpo)
+
+
+async def gerar_variacoes(
+    produto_id: str, texto1: str, texto2: str, usuario: dict
+) -> int:
+    """Cria a grade de combinacoes, sem mexer no que ja existe.
+
+    Regerar depois de acrescentar uma cor acrescenta so as linhas novas: as
+    antigas mantem preco, estoque e GTIN ja preenchidos.
+    """
+    produto = await buscar(produto_id)
+    if not produto:
+        raise ErroProduto("Produto não encontrado.")
+
+    opcoes1, opcoes2 = _opcoes(texto1), _opcoes(texto2)
+    if not opcoes1:
+        raise ErroProduto(f"Liste ao menos uma opção de {produto.get('eixo1_nome') or 'variação'}.")
+
+    combinacoes = combinar(opcoes1, opcoes2)
+    if len(combinacoes) > 200:
+        raise ErroProduto(
+            f"Isso geraria {len(combinacoes)} variações. O limite é 200 por produto."
+        )
+
+    existentes = {
+        (v.get("eixo1_valor"), v.get("eixo2_valor")) for v in await variacoes(produto_id)
+    }
+    base_sku = produto["sku"]
+    criadas = 0
+    for ordem, (v1, v2) in enumerate(combinacoes):
+        if (v1, v2) in existentes:
+            continue
+        await db.inserir(
+            "produto_variacoes",
+            {
+                "produto_id": produto_id,
+                "sku": sku_da_variacao(base_sku, (v1, v2)),
+                "eixo1_valor": v1,
+                "eixo2_valor": v2,
+                "preco": produto.get("preco"),
+                "estoque": 0,
+                "ordem": ordem,
+            },
+        )
+        criadas += 1
+
+    if criadas:
+        await db.registrar_evento(
+            "produto", f"{criadas} variação(ões) criadas em {base_sku}", usuario=usuario
+        )
+    return criadas
+
+
+async def salvar_variacoes(produto_id: str, linhas: list[dict], usuario: dict) -> None:
+    """Grava preço, estoque, SKU e GTIN de cada linha da grade."""
+    for linha in linhas:
+        vid = linha.get("id")
+        if not vid:
+            continue
+        sku = (linha.get("sku") or "").strip()
+        if not sku:
+            raise ErroProduto("Toda variação precisa de SKU.")
+
+        preco = _numero(linha.get("preco"), "Preço da variação")
+        promo = _numero(linha.get("preco_promo"), "Preço promocional")
+        if preco is not None and promo is not None and promo > preco:
+            raise ErroProduto(
+                f"Na variação {sku}, o preço promocional está maior que o preço."
+            )
+        estoque = _numero(linha.get("estoque"), "Estoque da variação", inteiro=True) or 0
+        if estoque < 0:
+            raise ErroProduto(f"Estoque negativo na variação {sku}.")
+
+        await db.atualizar(
+            "produto_variacoes",
+            {"id": f"eq.{vid}"},
+            {
+                "sku": sku,
+                "preco": float(preco) if preco is not None else None,
+                "preco_promo": float(promo) if promo is not None else None,
+                "estoque": estoque,
+                "gtin": (linha.get("gtin") or "").strip() or None,
+                "ativa": bool(linha.get("ativa")),
+            },
+        )
+    await db.registrar_evento("produto", "grade de variações salva", usuario=usuario)
+
+
+async def aplicar_a_todas(
+    produto_id: str, preco: str, estoque: str, usuario: dict
+) -> int:
+    """O "Aplicar a todos" da Shopee: preenche a coluna inteira de uma vez."""
+    campos: dict = {}
+    if (preco or "").strip():
+        valor = _numero(preco, "Preço")
+        campos["preco"] = float(valor) if valor is not None else None
+    if (estoque or "").strip():
+        campos["estoque"] = _numero(estoque, "Estoque", inteiro=True) or 0
+    if not campos:
+        raise ErroProduto("Informe preço, estoque, ou os dois.")
+
+    linhas = await variacoes(produto_id)
+    for v in linhas:
+        await db.atualizar("produto_variacoes", {"id": f"eq.{v['id']}"}, campos)
+    await db.registrar_evento(
+        "produto", f"valores aplicados a {len(linhas)} variação(ões)", usuario=usuario
+    )
+    return len(linhas)
+
+
+async def remover_variacao(variacao_id: str) -> None:
+    await db.apagar("produto_variacoes", {"id": f"eq.{variacao_id}"})
+
+
+def resumo_grade(linhas: list[dict]) -> dict:
+    """Totais que a tela mostra no topo da grade."""
+    precos = [float(v["preco"]) for v in linhas if v.get("preco") is not None]
+    return {
+        "quantas": len(linhas),
+        "ativas": sum(1 for v in linhas if v.get("ativa")),
+        "estoque": sum(int(v.get("estoque") or 0) for v in linhas),
+        "sem_preco": sum(1 for v in linhas if v.get("preco") is None),
+        "preco_min": min(precos) if precos else None,
+        "preco_max": max(precos) if precos else None,
+    }
 
 
 # ---------------------------------------------------------------------------

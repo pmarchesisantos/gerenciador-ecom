@@ -3,14 +3,16 @@
 
 {% block conteudo %}
 {% set novo = produto is none %}
+{% set pode_editar = pode('operador') %}
 
 <h1>{{ produto.titulo if produto else 'Novo produto' }}</h1>
 <p class="sub">
   {% if novo %}
-    Cadastre uma vez aqui. Depois você vincula aos anúncios que já existem nas
-    plataformas — ou publica a partir daqui, quando essa parte estiver pronta.
+    Cadastre a base aqui. Depois você monta a grade de cor e tamanho, completa
+    os campos que os anúncios pedem e vincula ao que já existe nas plataformas.
   {% else %}
     <span class="cru">{{ produto.sku }}</span>
+    {% if resumo_grade.quantas %}&middot; {{ resumo_grade.quantas }} variações{% endif %}
     &middot; cadastrado em {{ produto.criado_em|data }}
     {% if not produto.ativo %}&middot; <span class="selo cinza">inativo</span>{% endif %}
   {% endif %}
@@ -18,30 +20,50 @@
 
 <div class="acoes" style="margin-bottom:18px">
   <a class="botao neutro" href="/produtos">Voltar</a>
-  {% if not novo and pode('operador') %}
+  {% if not novo and pode_editar %}
     <form method="post" action="/produtos/{{ produto.id }}/remover" style="display:inline"
-          onsubmit="return confirm('Remover {{ produto.titulo }}? As fotos também serão apagadas.');">
+          onsubmit="return confirm('Remover {{ produto.titulo }}? Variações e fotos vão junto.');">
       <button class="botao perigo" type="submit">Remover produto</button>
     </form>
   {% endif %}
 </div>
 
-<div class="painel-2">
+{# ---------------------------------------------------------------- abas #}
+<div class="abas" role="tablist">
+  <button type="button" class="aba ativa" data-aba="basico">Básico</button>
+  {% if not novo %}<button type="button" class="aba" data-aba="variacoes">
+    Variações{% if resumo_grade.quantas %} <span class="selo cinza">{{ resumo_grade.quantas }}</span>{% endif %}
+  </button>{% endif %}
+  <button type="button" class="aba" data-aba="especificacao">Especificação</button>
+  <button type="button" class="aba" data-aba="fiscal">Fiscal</button>
+  <button type="button" class="aba" data-aba="envio">Envio</button>
+  {% if not novo %}
+    <button type="button" class="aba" data-aba="fotos">
+      Fotos{% if fotos %} <span class="selo cinza">{{ fotos|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="aba" data-aba="anuncios">
+      Anúncios{% if vinculos %} <span class="selo cinza">{{ vinculos|length }}</span>{% endif %}
+    </button>
+  {% endif %}
+</div>
 
-  {# ------------------------------------------------------------- dados #}
-  <div class="cartao">
-    <div class="cartao-cabeca">
-      <h3>Dados do produto</h3>
-      <p class="sub">O SKU é a chave: é ele que liga este cadastro aos anúncios.</p>
-    </div>
+{# =================================================== formulário do produto #}
+<form method="post" action="{{ '/produtos/novo' if novo else '/produtos/' ~ produto.id }}">
 
-    <form method="post" action="{{ '/produtos/novo' if novo else '/produtos/' ~ produto.id }}">
+  {# -------------------------------------------------------------- básico #}
+  <section class="painel-aba" data-painel="basico">
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Informação básica</h3>
+        <p class="sub">O SKU base é a raiz: os SKUs das variações saem dele.</p>
+      </div>
+
       <div class="grade g2" style="gap:12px">
         <label class="campo">
-          SKU
+          SKU base
           <input type="text" name="sku" required style="min-width:100%"
-                 value="{{ produto.sku if produto else '' }}"
-                 {{ 'autofocus' if novo }}>
+                 value="{{ produto.sku if produto else '' }}" {{ 'autofocus' if novo }}>
+          <span class="dica">Ex.: AZERA — vira AZERA-BRANCO-37 nas variações.</span>
         </label>
         <label class="campo">
           Marca
@@ -51,38 +73,175 @@
       </div>
 
       <label class="campo" style="margin:12px 0">
-        Título
-        <input type="text" name="titulo" required style="min-width:100%"
+        Título do anúncio
+        <input type="text" name="titulo" required style="min-width:100%" maxlength="160"
                value="{{ produto.titulo if produto else '' }}">
+        <span class="dica">As plataformas cortam entre 100 e 160 caracteres.</span>
       </label>
 
       <div class="grade g2" style="gap:12px">
         <label class="campo">
-          Preço
-          <input type="text" name="preco" style="min-width:100%" placeholder="0,00"
-                 value="{{ produto.preco if produto and produto.preco else '' }}">
+          Categoria
+          <input type="text" name="categoria" style="min-width:100%"
+                 placeholder="Sapatos Masculinos &gt; Tênis"
+                 value="{{ produto.categoria or '' if produto else '' }}">
         </label>
         <label class="campo">
-          Estoque
+          Condição
+          <select name="condicao" style="min-width:100%">
+            {% for v, r in [('novo','Novo'), ('usado','Usado'), ('recondicionado','Recondicionado')] %}
+              <option value="{{ v }}" {{ 'selected' if produto and produto.condicao == v }}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+
+      <div class="grade g2" style="gap:12px; margin-top:12px">
+        <label class="campo">
+          Preço padrão
+          <input type="text" name="preco" style="min-width:100%" placeholder="0,00"
+                 value="{{ produto.preco if produto and produto.preco else '' }}">
+          <span class="dica">Usado quando não há variações, e como base ao gerar a grade.</span>
+        </label>
+        <label class="campo">
+          Estoque padrão
           <input type="text" name="estoque" style="min-width:100%"
                  value="{{ produto.estoque if produto else '0' }}">
         </label>
       </div>
 
-      <label class="campo" style="margin:12px 0">
+      <label class="campo" style="margin:12px 0 0">
         Descrição
-        <textarea name="descricao" rows="4" style="min-width:100%; width:100%;
-                  padding:9px 12px; border:1px solid var(--borda-forte);
-                  border-radius:var(--raio-p); background:var(--papel);
-                  color:var(--tinta); font:inherit; font-size:14px"
-        >{{ produto.descricao or '' if produto else '' }}</textarea>
+        <textarea name="descricao" rows="10">{{ produto.descricao or '' if produto else '' }}</textarea>
       </label>
 
-      <h3 style="margin:18px 0 4px; font-size:13px; text-transform:uppercase;
-                 letter-spacing:.6px; color:var(--tinta-3)">Peso e medidas</h3>
-      <p class="sub" style="margin:0 0 12px">
-        As plataformas pedem isso para calcular frete. Pode preencher depois.
+      <label class="marca-caixa" style="margin-top:16px">
+        <input type="checkbox" name="ativo" value="1" {{ 'checked' if novo or produto.ativo }}>
+        Produto ativo
+      </label>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------- especificação #}
+  <section class="painel-aba" data-painel="especificacao" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Especificação</h3>
+        <p class="sub">
+          Atributos que cada plataforma pede na ficha do produto — material, gênero,
+          país de origem. Nome à esquerda, valor à direita.
+        </p>
+      </div>
+
+      <div id="lista-atributos">
+        {% set atrs = (produto.atributos or {}) if produto else {} %}
+        {% for chave, valor in atrs.items() %}
+          <div class="linha-atributo">
+            <input type="text" name="atributo_chave" value="{{ chave }}" placeholder="Material">
+            <input type="text" name="atributo_valor" value="{{ valor }}" placeholder="Couro sintético">
+            <button type="button" class="botao neutro pequeno remover-atributo">Remover</button>
+          </div>
+        {% endfor %}
+        {% for _ in range(3 if not atrs else 1) %}
+          <div class="linha-atributo">
+            <input type="text" name="atributo_chave" placeholder="Material">
+            <input type="text" name="atributo_valor" placeholder="Couro sintético">
+            <button type="button" class="botao neutro pequeno remover-atributo">Remover</button>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="acoes" style="margin-top:12px">
+        <button type="button" class="botao contorno pequeno" id="mais-atributo">
+          + Adicionar atributo
+        </button>
+      </div>
+      <p class="sub" style="margin:14px 0 0">
+        Linha sem nome é descartada ao salvar. Os nomes exatos variam por categoria
+        em cada plataforma — o de/para fino entra quando a publicação for implementada.
       </p>
+    </div>
+  </section>
+
+  {# -------------------------------------------------------------- fiscal #}
+  <section class="painel-aba" data-painel="fiscal" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Informações fiscais</h3>
+        <p class="sub">Usadas na emissão de nota e exigidas no cadastro das plataformas.</p>
+      </div>
+
+      <div class="grade g2" style="gap:12px">
+        <label class="campo">
+          NCM
+          <input type="text" name="ncm" style="min-width:100%" placeholder="64029990" maxlength="10"
+                 value="{{ produto.ncm or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          Origem
+          <select name="origem_fiscal" style="min-width:100%">
+            <option value="">Selecione</option>
+            {% for v, r in [
+              ('0','0 — Nacional'),
+              ('1','1 — Estrangeira, importação direta'),
+              ('2','2 — Estrangeira, adquirida no mercado interno'),
+              ('3','3 — Nacional, conteúdo de importação entre 40% e 70%'),
+              ('4','4 — Nacional, produção conforme processos produtivos'),
+              ('5','5 — Nacional, conteúdo de importação até 40%'),
+              ('6','6 — Estrangeira, importação direta, sem similar nacional'),
+              ('7','7 — Estrangeira, mercado interno, sem similar nacional'),
+              ('8','8 — Nacional, conteúdo de importação acima de 70%')] %}
+              <option value="{{ v }}" {{ 'selected' if produto and produto.origem_fiscal == v }}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="campo">
+          CFOP mesmo estado
+          <input type="text" name="cfop_dentro" style="min-width:100%" placeholder="5102" maxlength="4"
+                 value="{{ produto.cfop_dentro or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          CFOP outros estados
+          <input type="text" name="cfop_fora" style="min-width:100%" placeholder="6102" maxlength="4"
+                 value="{{ produto.cfop_fora or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          CSOSN / CST
+          <input type="text" name="csosn" style="min-width:100%" placeholder="102" maxlength="4"
+                 value="{{ produto.csosn or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          CEST
+          <input type="text" name="cest" style="min-width:100%" placeholder="28.059.00" maxlength="12"
+                 value="{{ produto.cest or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          Unidade
+          <input type="text" name="unidade" style="min-width:100%" placeholder="UN" maxlength="6"
+                 value="{{ produto.unidade or 'UN' if produto else 'UN' }}">
+        </label>
+        <label class="campo">
+          PIS e COFINS CST
+          <input type="text" name="pis_cofins_cst" style="min-width:100%" maxlength="4"
+                 value="{{ produto.pis_cofins_cst or '' if produto else '' }}">
+        </label>
+        <label class="campo">
+          % total de tributos
+          <input type="text" name="tributos_pct" style="min-width:100%" placeholder="0,00"
+                 value="{{ produto.tributos_pct if produto and produto.tributos_pct else '' }}">
+        </label>
+      </div>
+    </div>
+  </section>
+
+  {# --------------------------------------------------------------- envio #}
+  <section class="painel-aba" data-painel="envio" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Peso e medidas</h3>
+        <p class="sub">É com isso que a plataforma calcula o frete. Peso do pacote fechado.</p>
+      </div>
+
       <div class="grade" style="grid-template-columns:repeat(4, 1fr); gap:10px">
         <label class="campo">
           Peso (g)
@@ -106,50 +265,209 @@
         </label>
       </div>
 
-      <label style="display:flex; align-items:center; gap:9px; margin:16px 0;
-                    font-size:14px; cursor:pointer">
-        <input type="checkbox" name="ativo" value="1"
-               {{ 'checked' if novo or produto.ativo }}>
-        Produto ativo
+      <label class="marca-caixa" style="margin-top:16px">
+        <input type="checkbox" name="medidas_por_variacao" value="1"
+               {{ 'checked' if produto and produto.medidas_por_variacao }}>
+        Peso e medidas diferentes por variação
       </label>
-
-      {% if pode('operador') %}
-        <button class="botao" type="submit">
-          {{ 'Cadastrar produto' if novo else 'Salvar alterações' }}
-        </button>
-      {% else %}
-        <p class="sub" style="margin:0">
-          Seu acesso é de leitura: você consulta, mas não altera o cadastro.
-        </p>
-      {% endif %}
-    </form>
-  </div>
-
-  {# -------------------------------------------------------------- fotos #}
-  <div class="cartao">
-    <div class="cartao-cabeca">
-      <h3>Fotos</h3>
-      <p class="sub">
-        {% if novo %}
-          Disponível depois de cadastrar o produto.
-        {% else %}
-          Ficam no Supabase Storage com URL pública — é por ela que as
-          plataformas buscam a imagem na hora de publicar.
-        {% endif %}
+      <p class="sub" style="margin:10px 0 0">
+        Marcado, cada linha da grade pode ter o seu peso. Deixe desmarcado quando
+        todas as numerações pesam praticamente o mesmo.
       </p>
     </div>
+  </section>
 
-    {% if novo %}
-      <p class="sub" style="margin:0">Salve o produto primeiro.</p>
+  {% if pode_editar %}
+    <div class="barra-salvar">
+      <button class="botao" type="submit">
+        {{ 'Cadastrar produto' if novo else 'Salvar produto' }}
+      </button>
+      <span class="sub" style="margin:0">
+        Salva Básico, Especificação, Fiscal e Envio de uma vez.
+      </span>
+    </div>
+  {% else %}
+    <p class="sub">Seu acesso é de leitura: você consulta, mas não altera o cadastro.</p>
+  {% endif %}
+</form>
+
+{% if not novo %}
+  {# ----------------------------------------------------------- variações #}
+  <section class="painel-aba" data-painel="variacoes" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Eixos de variação</h3>
+        <p class="sub">
+          Dois eixos, como nas plataformas: tipicamente Cor e Tamanho. Os nomes
+          ficam no produto; as opções geram a grade.
+        </p>
+      </div>
+
+      <form method="post" action="/produtos/{{ produto.id }}/variacoes/gerar">
+        <div class="grade g2" style="gap:12px">
+          <div>
+            <label class="campo" style="margin-bottom:10px">
+              Nome do eixo 1
+              <input type="text" form="form-eixos" name="eixo1_nome" style="min-width:100%"
+                     placeholder="Cor" value="{{ produto.eixo1_nome or '' }}">
+            </label>
+            <label class="campo">
+              Opções do eixo 1
+              <input type="text" name="opcoes1" style="min-width:100%"
+                     placeholder="Branco, Preto, Preto/Branco">
+            </label>
+          </div>
+          <div>
+            <label class="campo" style="margin-bottom:10px">
+              Nome do eixo 2
+              <input type="text" form="form-eixos" name="eixo2_nome" style="min-width:100%"
+                     placeholder="Tamanho" value="{{ produto.eixo2_nome or '' }}">
+            </label>
+            <label class="campo">
+              Opções do eixo 2
+              <input type="text" name="opcoes2" style="min-width:100%"
+                     placeholder="37, 38, 39, 40, 41, 42, 43, 44">
+            </label>
+          </div>
+        </div>
+        {% if pode_editar %}
+          <div class="acoes" style="margin-top:14px">
+            <button class="botao" type="submit">Gerar grade</button>
+          </div>
+          <p class="sub" style="margin:12px 0 0">
+            Separe por vírgula. Gerar de novo depois de acrescentar uma cor cria só
+            as combinações novas — preço e estoque já preenchidos não se perdem.
+          </p>
+        {% endif %}
+      </form>
+    </div>
+
+    {% if grade %}
+      <div class="cartao">
+        <div class="cartao-cabeca">
+          <h3>Grade</h3>
+          <p class="sub">
+            {{ resumo_grade.quantas }} variações &middot;
+            {{ resumo_grade.ativas }} ativas &middot;
+            {{ resumo_grade.estoque|inteiro }} em estoque
+            {% if resumo_grade.sem_preco %}
+              &middot; <b>{{ resumo_grade.sem_preco }} sem preço</b>
+            {% endif %}
+          </p>
+        </div>
+
+        {% if pode_editar %}
+          <form method="post" action="/produtos/{{ produto.id }}/variacoes/aplicar"
+                class="filtros" style="margin-bottom:16px">
+            <label class="campo">
+              Preço para todas
+              <input type="text" name="preco" placeholder="109,90">
+            </label>
+            <label class="campo">
+              Estoque para todas
+              <input type="text" name="estoque" placeholder="500">
+            </label>
+            <button class="botao contorno" type="submit">Aplicar a todas</button>
+          </form>
+        {% endif %}
+
+        <form method="post" action="/produtos/{{ produto.id }}/variacoes">
+          <div class="rolagem" data-rolagem-lateral>
+            <table class="compacta">
+              <thead><tr>
+                <th>{{ produto.eixo1_nome or 'Eixo 1' }}</th>
+                <th>{{ produto.eixo2_nome or 'Eixo 2' }}</th>
+                <th>SKU</th>
+                <th class="num">Preço</th>
+                <th class="num">Promocional</th>
+                <th class="num">Estoque</th>
+                <th>GTIN</th>
+                <th>Ativa</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+              {% for v in grade %}
+                <tr>
+                  <td>{{ v.eixo1_valor or '-' }}</td>
+                  <td>{{ v.eixo2_valor or '-' }}</td>
+                  <td>
+                    <input type="hidden" name="variacao_id" value="{{ v.id }}">
+                    <input type="text" name="variacao_sku" value="{{ v.sku }}"
+                           style="min-width:170px" {{ 'disabled' if not pode_editar }}>
+                  </td>
+                  <td><input type="text" name="variacao_preco" style="min-width:90px"
+                             value="{{ v.preco or '' }}" {{ 'disabled' if not pode_editar }}></td>
+                  <td><input type="text" name="variacao_promo" style="min-width:90px"
+                             value="{{ v.preco_promo or '' }}" {{ 'disabled' if not pode_editar }}></td>
+                  <td><input type="text" name="variacao_estoque" style="min-width:75px"
+                             value="{{ v.estoque }}" {{ 'disabled' if not pode_editar }}></td>
+                  <td><input type="text" name="variacao_gtin" style="min-width:130px"
+                             value="{{ v.gtin or '' }}" {{ 'disabled' if not pode_editar }}></td>
+                  <td style="text-align:center">
+                    <input type="checkbox" name="variacao_ativa" value="{{ v.id }}"
+                           {{ 'checked' if v.ativa }} {{ 'disabled' if not pode_editar }}>
+                  </td>
+                  <td class="num">
+                    {% if pode_editar %}
+                      <button class="botao neutro pequeno" type="submit"
+                              formaction="/produtos/{{ produto.id }}/variacoes/{{ v.id }}/remover">
+                        Remover
+                      </button>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if pode_editar %}
+            <div class="barra-salvar" style="margin-top:16px">
+              <button class="botao" type="submit">Salvar grade</button>
+              <span class="sub" style="margin:0">
+                Preço em branco significa "sem preço" — a variação não sobe assim.
+              </span>
+            </div>
+          {% endif %}
+        </form>
+      </div>
     {% else %}
+      <div class="cartao vazio">
+        <h3>Sem variações</h3>
+        <p>Este produto é vendido numa versão só, com o preço e o estoque do Básico.<br>
+           Se ele tem cor ou tamanho, gere a grade acima.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  {# ------------------------------------------- form só dos nomes dos eixos #}
+  <form method="post" action="/produtos/{{ produto.id }}" id="form-eixos" hidden>
+    <input type="hidden" name="sku" value="{{ produto.sku }}">
+    <input type="hidden" name="titulo" value="{{ produto.titulo }}">
+    <input type="hidden" name="preco" value="{{ produto.preco or '' }}">
+    <input type="hidden" name="estoque" value="{{ produto.estoque }}">
+    <input type="hidden" name="ativo" value="{{ '1' if produto.ativo else '' }}">
+  </form>
+
+  {# --------------------------------------------------------------- fotos #}
+  <section class="painel-aba" data-painel="fotos" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Fotos</h3>
+        <p class="sub">
+          Ficam no Supabase Storage com URL pública — é por ela que as plataformas
+          buscam a imagem ao publicar. A primeira é a de capa.
+        </p>
+      </div>
+
       {% if fotos %}
         <div class="galeria">
           {% for f in fotos %}
             <figure class="foto">
               <img src="{{ f.url }}" alt="" loading="lazy">
-              {% if pode('operador') %}
-                <form method="post"
-                      action="/produtos/{{ produto.id }}/foto/{{ f.id }}/remover">
+              {% if loop.first %}<figcaption class="selo azul">capa</figcaption>{% endif %}
+              {% if pode_editar %}
+                <form method="post" action="/produtos/{{ produto.id }}/foto/{{ f.id }}/remover">
                   <button class="botao perigo pequeno" type="submit">Remover</button>
                 </form>
               {% endif %}
@@ -160,103 +478,144 @@
         <p class="sub">Nenhuma foto ainda.</p>
       {% endif %}
 
-      {% if pode('operador') %}
+      {% if pode_editar %}
         <form method="post" action="/produtos/{{ produto.id }}/foto"
-              enctype="multipart/form-data" style="margin-top:14px">
+              enctype="multipart/form-data" style="margin-top:16px">
           <label class="campo" style="margin-bottom:10px">
             Adicionar foto
             <input type="file" name="foto" accept="image/jpeg,image/png,image/webp"
                    required style="min-width:100%">
-            <span class="sub" style="margin:0; font-weight:400; text-transform:none">
-              JPEG, PNG ou WebP, até 8 MB. Máximo de 10 por produto.
-            </span>
+            <span class="dica">JPEG, PNG ou WebP, até 8 MB. Máximo de 10 por produto.</span>
           </label>
           <button class="botao neutro" type="submit">Enviar foto</button>
         </form>
       {% endif %}
-    {% endif %}
-  </div>
-</div>
-
-{# --------------------------------------------------------- de/para #}
-{% if not novo %}
-<div class="cartao">
-  <div class="cartao-cabeca">
-    <h3>Anúncios nas plataformas</h3>
-    <p class="sub">
-      O de/para. Enquanto este produto não estiver vinculado, as vendas dele
-      continuam aparecendo separadas por canal no painel.
-    </p>
-  </div>
-
-  {% if vinculos %}
-    <div class="rolagem">
-      <table class="compacta">
-        <thead><tr>
-          <th>Loja</th><th>Código do anúncio</th><th>SKU na plataforma</th>
-          <th>Vinculado em</th><th></th>
-        </tr></thead>
-        <tbody>
-        {% for v in vinculos %}
-          {% set c = contas_por_id.get(v.conta_id) if contas_por_id else None %}
-          <tr>
-            <td>
-              {% if c %}{{ c.canal_rotulo }} <span class="cru">{{ c.apelido }}</span>
-              {% else %}<span class="cru">loja removida</span>{% endif %}
-            </td>
-            <td class="cru">{{ v.anuncio_id }}</td>
-            <td class="cru">{{ v.sku_canal or '-' }}</td>
-            <td>{{ v.criado_em|data }}</td>
-            <td class="num">
-              {% if pode('operador') %}
-                <form method="post"
-                      action="/produtos/{{ produto.id }}/vinculo/{{ v.id }}/remover">
-                  <button class="botao neutro pequeno" type="submit">Desvincular</button>
-                </form>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
     </div>
-  {% else %}
-    <p class="sub">Nenhum anúncio vinculado ainda.</p>
-  {% endif %}
+  </section>
 
-  {% if pode('operador') and contas %}
-    <form method="post" action="/produtos/{{ produto.id }}/vincular" style="margin-top:16px">
-      <div class="grade g3" style="gap:12px">
-        <label class="campo">
-          Loja
-          <select name="conta_id" required style="min-width:100%">
-            {% for c in contas %}
-              <option value="{{ c.id }}">{{ c.canal_rotulo }} — {{ c.apelido }}</option>
+  {# ------------------------------------------------------------ anúncios #}
+  <section class="painel-aba" data-painel="anuncios" hidden>
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Anúncios nas plataformas</h3>
+        <p class="sub">
+          O de/para. Sem vínculo, as vendas deste produto continuam aparecendo
+          separadas por canal no painel.
+        </p>
+      </div>
+
+      {% if vinculos %}
+        <div class="rolagem">
+          <table class="compacta">
+            <thead><tr>
+              <th>Loja</th><th>Código do anúncio</th><th>SKU na plataforma</th>
+              <th>Vinculado em</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for v in vinculos %}
+              {% set c = contas_por_id.get(v.conta_id) if contas_por_id else None %}
+              <tr>
+                <td>
+                  {% if c %}{{ c.canal_rotulo }} <span class="cru">{{ c.apelido }}</span>
+                  {% else %}<span class="cru">loja removida</span>{% endif %}
+                </td>
+                <td class="cru">{{ v.anuncio_id }}</td>
+                <td class="cru">{{ v.sku_canal or '-' }}</td>
+                <td>{{ v.criado_em|data }}</td>
+                <td class="num">
+                  {% if pode_editar %}
+                    <form method="post"
+                          action="/produtos/{{ produto.id }}/vinculo/{{ v.id }}/remover">
+                      <button class="botao neutro pequeno" type="submit">Desvincular</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
             {% endfor %}
-          </select>
-        </label>
-        <label class="campo">
-          Código do anúncio
-          <input type="text" name="anuncio_id" required style="min-width:100%"
-                 placeholder="MLB1234567890">
-        </label>
-        <label class="campo">
-          SKU na plataforma
-          <input type="text" name="sku_canal" style="min-width:100%"
-                 placeholder="opcional, se for diferente">
-        </label>
-      </div>
-      <div class="acoes" style="margin-top:12px">
-        <button class="botao" type="submit">Vincular anúncio</button>
-      </div>
-      <p class="sub" style="margin:12px 0 0">
-        O <b>SKU na plataforma</b> é o que aparece nos pedidos daquele canal. Se
-        ele for diferente do SKU daqui, preencha — é assim que o painel sabe que
-        as duas vendas são do mesmo produto.
-      </p>
-    </form>
-  {% endif %}
-</div>
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="sub">Nenhum anúncio vinculado ainda.</p>
+      {% endif %}
+
+      {% if pode_editar and contas %}
+        <form method="post" action="/produtos/{{ produto.id }}/vincular" style="margin-top:16px">
+          <div class="grade g3" style="gap:12px">
+            <label class="campo">
+              Loja
+              <select name="conta_id" required style="min-width:100%">
+                {% for c in contas %}
+                  <option value="{{ c.id }}">{{ c.canal_rotulo }} — {{ c.apelido }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="campo">
+              Código do anúncio
+              <input type="text" name="anuncio_id" required style="min-width:100%"
+                     placeholder="MLB1234567890">
+            </label>
+            <label class="campo">
+              SKU na plataforma
+              <input type="text" name="sku_canal" style="min-width:100%"
+                     placeholder="opcional, se for diferente">
+            </label>
+          </div>
+          <div class="acoes" style="margin-top:12px">
+            <button class="botao" type="submit">Vincular anúncio</button>
+          </div>
+          <p class="sub" style="margin:12px 0 0">
+            Os SKUs das variações já são reconhecidos sozinhos no painel — este
+            campo é para quando a plataforma usa um código diferente do seu.
+          </p>
+        </form>
+      {% endif %}
+    </div>
+  </section>
 {% endif %}
+
+<script>
+  (function () {
+    var abas = document.querySelectorAll('.aba');
+    var paineis = document.querySelectorAll('.painel-aba');
+    if (!abas.length) return;
+
+    function mostrar(nome) {
+      abas.forEach(function (a) { a.classList.toggle('ativa', a.dataset.aba === nome); });
+      paineis.forEach(function (p) { p.hidden = p.dataset.painel !== nome; });
+      try { localStorage.setItem('aba-produto', nome); } catch (e) {}
+    }
+    abas.forEach(function (a) {
+      a.addEventListener('click', function () { mostrar(a.dataset.aba); });
+    });
+
+    // volta para a aba em que a pessoa estava, depois de salvar
+    try {
+      var guardada = localStorage.getItem('aba-produto');
+      if (guardada && document.querySelector('[data-painel="' + guardada + '"]')) {
+        mostrar(guardada);
+      }
+    } catch (e) {}
+
+    // linhas de atributo
+    var lista = document.getElementById('lista-atributos');
+    var mais = document.getElementById('mais-atributo');
+    if (lista && mais) {
+      mais.addEventListener('click', function () {
+        var modelo = lista.querySelector('.linha-atributo');
+        var nova = modelo.cloneNode(true);
+        nova.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+        lista.appendChild(nova);
+        nova.querySelector('input').focus();
+      });
+      lista.addEventListener('click', function (ev) {
+        if (!ev.target.classList.contains('remover-atributo')) return;
+        var linhas = lista.querySelectorAll('.linha-atributo');
+        if (linhas.length > 1) { ev.target.closest('.linha-atributo').remove(); }
+        else { linhas[0].querySelectorAll('input').forEach(function (i) { i.value = ''; }); }
+      });
+    }
+  })();
+</script>
 
 {% endblock %}

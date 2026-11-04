@@ -781,6 +781,91 @@ def botoes(c: TestClient) -> None:
         checar(f"{rota} sem o nome antigo", "botao vazio" not in r.text)
 
 
+def variacoes(c: TestClient) -> None:
+    print("variacoes:")
+    from app.servicos import produtos as sp
+
+    checar("opcoes aparadas e sem repetido",
+           sp._opcoes("Branco, Preto , Preto/Branco, branco")
+           == ["Branco", "Preto", "Preto/Branco"])
+    checar("quebra de linha tambem separa",
+           len(sp._opcoes("37" + chr(10) + "38; 39")) == 3)
+
+    grade = sp.combinar(["Branco", "Preto"], ["37", "38"])
+    checar("grade e o produto cartesiano", len(grade) == 4)
+    checar("ordem segue o que foi escrito", grade[0] == ("Branco", "37"))
+    checar("um eixo so tambem vale",
+           sp.combinar(["Branco"], []) == [("Branco", None)])
+    checar("sem opcoes, nao gera nada", sp.combinar([], ["37"]) == [])
+
+    checar("SKU sai do base, sem acento nem barra",
+           sp.sku_da_variacao("AZERA", ("Preto/Branco", "37")) == "AZERA-PRETO-BRANCO-37")
+    checar("SKU ignora eixo vazio",
+           sp.sku_da_variacao("AZERA", ("Branco", None)) == "AZERA-BRANCO")
+    checar("acento vira ascii",
+           sp.sku_da_variacao("CAFÉ", ("Único",)) == "CAFE-UNICO")
+
+    r = sp.resumo_grade([
+        {"preco": 109.99, "estoque": 500, "ativa": True},
+        {"preco": 89.90, "estoque": 10, "ativa": True},
+        {"preco": None, "estoque": 0, "ativa": False},
+    ])
+    checar("resumo conta o que falta preencher", r["sem_preco"] == 1)
+    checar("resumo soma o estoque", r["estoque"] == 510)
+    checar("resumo acha a faixa de preco",
+           r["preco_min"] == 89.90 and r["preco_max"] == 109.99)
+
+    atrs = sp.montar_atributos(["Material", "", "Gênero"], ["Couro", "lixo", "Masculino"])
+    checar("atributo sem nome e descartado",
+           atrs == {"Material": "Couro", "Gênero": "Masculino"})
+
+    print("campos do anuncio:")
+    limpo = sp._limpar({
+        "sku": "AZERA", "titulo": "Tenis", "ncm": " 64029990 ", "cest": "28.059.00",
+        "origem_fiscal": "0", "cfop_dentro": "5102", "cfop_fora": "6102",
+        "csosn": "102", "unidade": "PARES", "condicao": "novo",
+        "categoria": "Sapatos > Tenis", "eixo1_nome": "Cor", "eixo2_nome": "Tamanho",
+        "ativo": True,
+    })
+    for campo, valor in [("ncm", "64029990"), ("cest", "28.059.00"),
+                         ("origem_fiscal", "0"), ("cfop_dentro", "5102"),
+                         ("csosn", "102"), ("unidade", "PARES"),
+                         ("eixo1_nome", "Cor"), ("eixo2_nome", "Tamanho")]:
+        checar(f"campo {campo} preservado", limpo[campo] == valor, str(limpo[campo]))
+    checar("unidade cai para UN quando vazia",
+           sp._limpar({"sku": "A", "titulo": "B"})["unidade"] == "UN")
+
+    print("telas de variacao:")
+    logar(c, "operador")
+    for rota, metodo in [("/produtos/x/variacoes/gerar", "post"),
+                         ("/produtos/x/variacoes", "post"),
+                         ("/produtos/x/variacoes/aplicar", "post")]:
+        r = getattr(c, metodo)(rota, data={}, follow_redirects=False)
+        checar(f"{rota} responde sem estourar", r.status_code == 303,
+               f"HTTP {r.status_code}")
+
+    logar(c, "leitor")
+    r = c.post("/produtos/x/variacoes/gerar", data={"opcoes1": "a"},
+               follow_redirects=False)
+    checar("leitor nao gera grade", r.status_code == 303
+           and "erro=" in r.headers.get("location", ""))
+
+    r = c.get("/produtos/novo", follow_redirects=False)
+    checar("leitor nao abre cadastro", r.status_code == 303)
+
+    logar(c, "dono")
+    r = c.get("/produtos/novo")
+    for aba in ("Básico", "Especificação", "Fiscal", "Envio"):
+        checar(f"aba {aba} na tela", aba in r.text)
+    checar("campos fiscais presentes",
+           'name="ncm"' in r.text and 'name="csosn"' in r.text
+           and 'name="cfop_fora"' in r.text)
+    checar("eixos de variacao presentes", 'name="atributo_chave"' in r.text)
+    css = c.get("/static/estilo.css").text
+    checar("dica nao herda o caixa-alta do rotulo",
+           ".dica {" in css and "text-transform: none" in css)
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -796,6 +881,7 @@ def main() -> int:
         senhas(c)
         etiquetas(c)
         catalogo(c)
+        variacoes(c)
         botoes(c)
         responsivo(c)
         entrada(c)

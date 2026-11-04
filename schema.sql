@@ -260,3 +260,66 @@ alter table public.produto_anuncios enable row level security;
 grant all privileges on public.produtos         to service_role;
 grant all privileges on public.produto_fotos    to service_role;
 grant all privileges on public.produto_anuncios to service_role;
+
+
+-- ---------------------------------------------------------------------------
+-- O produto vira a BASE. Preço e estoque dele passam a ser o padrão usado
+-- quando não há variação; com variações, quem manda é a linha da variação.
+-- ---------------------------------------------------------------------------
+alter table public.produtos add column if not exists categoria       text;
+alter table public.produtos add column if not exists condicao        text default 'novo';
+alter table public.produtos add column if not exists eixo1_nome      text;
+alter table public.produtos add column if not exists eixo2_nome      text;
+alter table public.produtos add column if not exists atributos       jsonb not null default '{}'::jsonb;
+alter table public.produtos add column if not exists medidas_por_variacao boolean not null default false;
+
+-- fiscais (Brasil). Colunas próprias, não JSON: são padronizadas e entram
+-- em validação, em nota e no cadastro de todas as plataformas.
+alter table public.produtos add column if not exists ncm             text;
+alter table public.produtos add column if not exists cest            text;
+alter table public.produtos add column if not exists origem_fiscal   text;
+alter table public.produtos add column if not exists cfop_dentro     text;
+alter table public.produtos add column if not exists cfop_fora       text;
+alter table public.produtos add column if not exists csosn           text;
+alter table public.produtos add column if not exists unidade         text default 'UN';
+alter table public.produtos add column if not exists pis_cofins_cst  text;
+alter table public.produtos add column if not exists tributos_pct    numeric(5, 2);
+
+-- ---------------------------------------------------------------------------
+-- produto_variacoes: uma linha por combinação vendável.
+--
+-- Dois eixos, não N. É o que Shopee, Mercado Livre e TikTok expõem na prática
+-- (Variação1 / Variação2), e cobre cor × tamanho sem o custo de uma estrutura
+-- genérica de eixos que ninguém usaria.
+-- ---------------------------------------------------------------------------
+create table if not exists public.produto_variacoes (
+    id            uuid primary key default gen_random_uuid(),
+    produto_id    uuid not null references public.produtos (id) on delete cascade,
+    sku           text not null,
+    eixo1_valor   text,
+    eixo2_valor   text,
+    preco         numeric(12, 2),
+    preco_promo   numeric(12, 2),
+    estoque       integer not null default 0,
+    gtin          text,
+    peso_g        integer,
+    comprimento_cm integer,
+    largura_cm    integer,
+    altura_cm     integer,
+    foto_id       uuid references public.produto_fotos (id) on delete set null,
+    ativa         boolean not null default true,
+    ordem         integer not null default 0,
+    criado_em     timestamptz not null default now(),
+    unique (sku)
+);
+
+create index if not exists produto_variacoes_produto_idx
+    on public.produto_variacoes (produto_id, ordem);
+
+-- o de/para passa a poder apontar para uma variação específica
+alter table public.produto_anuncios
+    add column if not exists variacao_id uuid
+    references public.produto_variacoes (id) on delete set null;
+
+alter table public.produto_variacoes enable row level security;
+grant all privileges on public.produto_variacoes to service_role;

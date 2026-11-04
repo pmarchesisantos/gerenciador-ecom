@@ -29,7 +29,8 @@
       <thead><tr>
         <th>SKU</th><th>Produto</th><th>Marca</th>
         <th class="num">Preço</th><th class="num">Estoque</th>
-        <th class="num">Fotos</th><th class="num">Anúncios</th><th>Situação</th>
+        <th class="num">Variações</th><th class="num">Fotos</th>
+        <th class="num">Anúncios</th><th>Situação</th>
       </tr></thead>
       <tbody>
       {% for p in lista %}
@@ -39,6 +40,10 @@
           <td>{{ p.marca or '-' }}</td>
           <td class="num">{{ p.preco|moeda if p.preco else '-' }}</td>
           <td class="num">{{ p.estoque|inteiro }}</td>
+          <td class="num">
+            {% set g = variacoes.get(p.id, 0) %}
+            {% if g %}{{ g }}{% else %}<span class="selo cinza">única</span>{% endif %}
+          </td>
           <td class="num">
             {% set n = fotos.get(p.id, 0) %}
             {% if n %}{{ n }}{% else %}<span class="selo cinza">sem foto</span>{% endif %}
@@ -58,6 +63,8 @@
     </table>
   </div>
   <p class="sub" style="margin:14px 0 0">
+    <b>Variações</b> é quantas combinações de cor e tamanho o produto tem;
+    "única" significa que ele é vendido numa versão só.
     <b>Anúncios</b> é quantas plataformas já conhecem este produto. Enquanto um
     produto estiver <b>solto</b>, as vendas dele continuam aparecendo separadas
     por canal no painel.
