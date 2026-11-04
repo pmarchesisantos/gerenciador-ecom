@@ -12,6 +12,8 @@
   {% if tem_filtro %}(com filtro aplicado){% endif %}.
 </p>
 
+{% include "_alerta_estoque.html" %}
+
 {# ---- fila de trabalho: o que falta despachar ------------------------- #}
 {% set a_enviar = contagem_envio.get('a_enviar', 0) %}
 {% if a_enviar %}

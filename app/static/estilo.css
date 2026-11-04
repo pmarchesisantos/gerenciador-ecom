@@ -444,6 +444,10 @@ label.campo {
   color: var(--tinta-3); font-weight: 700; text-transform: uppercase;
   letter-spacing: .5px;
 }
+/* nenhum controle pode ser mais largo que o container que o abriga */
+input[type=text], input[type=date], input[type=password], select, textarea {
+  max-width: 100%;
+}
 input[type=text], input[type=date], input[type=password], select {
   box-sizing: border-box; height: var(--botao-altura); padding: 0 12px;
   border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
@@ -862,3 +866,50 @@ table input[type=text] { height: 32px; font-size: 13px; }
   text-transform: uppercase; letter-spacing: .6px; color: var(--tinta-3);
 }
 .cartao > .titulo-grupo:first-of-type { margin-top: 4px; }
+
+/* ------------------------------------------------------------------ */
+/* estoque                                                             */
+/* ------------------------------------------------------------------ */
+
+/* mesmos cartoes do painel, mas sem o hero ao lado */
+.tiles-soltas {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.tiles-soltas > * { min-width: 0; }
+@media (max-width: 760px) {
+  .tiles-soltas {
+    display: flex; overflow-x: auto; scroll-snap-type: x proximity;
+    padding-bottom: 6px;
+  }
+  .tiles-soltas .tile { flex: 0 0 190px; scroll-snap-align: start; }
+}
+
+.form-movimento {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+}
+/* Um <select> cresce ate caber a opcao mais longa, e "AZERA-PRETO-39 - Tenis
+   Azera Masculino (Preto / 39)" estourava o cartao no celular. Encolher o
+   item de flex (min-width:0) e limitar o controle resolve nos dois sentidos. */
+.form-movimento > * { min-width: 0; max-width: 100%; }
+.form-movimento .campo { flex: 1 1 200px; }
+.form-movimento .campo.largo { flex: 2 1 260px; }
+.form-movimento select,
+.form-movimento input[type=text] { width: 100%; min-width: 0; max-width: 100%; }
+@media (max-width: 620px) {
+  .form-movimento { flex-direction: column; align-items: stretch; }
+  .form-movimento .botao { width: 100%; }
+}
+
+/* no livro, o sinal da mudanca precisa ser legivel de relance */
+td.num.positivo { color: var(--good); font-weight: 600; }
+td.num.negativo { color: var(--critical); font-weight: 600; }
+
+.alerta-estoque .lista-reposicao {
+  margin: 8px 0 0; padding-left: 20px; line-height: 1.7;
+}
+.alerta-estoque .lista-reposicao .cru { font-size: 12.5px; }
+.alerta-estoque .lista-reposicao .sub { font-size: 12px; color: inherit; opacity: .8; }
+
+/* linha ja importada: visivel, mas claramente fora da acao */
+.linha-apagada { opacity: .5; }

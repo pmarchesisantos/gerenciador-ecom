@@ -62,6 +62,8 @@ from app.servicos import consulta as servico_consulta
 from app.servicos import contas as servico_contas
 from app.servicos import exemplo as servico_exemplo
 from app.servicos import categorias as servico_categorias
+from app.servicos import estoque as servico_estoque
+from app.servicos import importacao as servico_importacao
 from app.servicos import produtos as servico_produtos
 from app.servicos import usuarios as servico_usuarios
 
@@ -233,6 +235,14 @@ async def _mapa_sku() -> dict:
         return await servico_produtos.mapa_sku_canal()
     except Exception:
         return {}
+
+
+async def _alertas_estoque() -> list[dict]:
+    """O que precisa de reposicao. Falha em silencio: o aviso e um extra."""
+    try:
+        return servico_estoque.alertas(await servico_estoque.posicao())
+    except Exception:
+        return []
 
 
 def _graficos(resumo: dict) -> dict:
@@ -614,6 +624,16 @@ async def pedidos(
     )
     lista = servico_consulta.filtrar(dados["pedidos"], canal, grupo, q, envio)
 
+    # Baixa automatica: os pedidos ja despachados que ainda nao estao no livro
+    # saem do estoque agora. E idempotente - dar F5 nao desconta de novo - e
+    # falhar aqui nunca pode tirar a tela de pedidos do ar.
+    baixa = {}
+    if not exemplo:
+        try:
+            baixa = await servico_estoque.conciliar(dados["pedidos"], usuario)
+        except Exception:
+            baixa = {}
+
     return templates.TemplateResponse(
         "pedidos.html",
         _base(
@@ -625,6 +645,8 @@ async def pedidos(
             contagem_envio=servico_consulta.contar_envios(dados["pedidos"]),
             dados=dados,
             filtro={"canal": canal, "grupo": grupo, "q": q, "envio": envio},
+            baixa=baixa,
+            alertas_estoque=[] if exemplo else await _alertas_estoque(),
             exemplo=bool(exemplo),
             erro_infra=erro_infra,
         ),
@@ -728,9 +750,76 @@ async def produtos_lista(request: Request, q: str = ""):
             vinculos=vinculos,
             variacoes=variacoes,
             busca=q,
+            alertas_estoque=await _alertas_estoque(),
             erro_infra=erro_infra,
         ),
     )
+
+
+@app.get("/produtos/importar", response_class=HTMLResponse)
+async def produtos_importar_previa(request: Request, conta_id: str = ""):
+    """Mostra o que a importacao faria, anuncio por anuncio. Nada e gravado."""
+    usuario = auth.usuario_da_sessao(request)
+    erro_infra, previa, contas = "", None, []
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        # so loja conectada: sem token nao ha o que ler na plataforma
+        contas = [
+            c for c in await servico_contas.resumo(usuario)
+            if c.get("ativa") and c.get("access_token_cripto")
+        ]
+        if conta_id:
+            previa = await servico_importacao.previa(conta_id, usuario)
+    except auth.SemPermissao as e:
+        return _volta("/produtos", erro=str(e))
+    except (servico_importacao.ErroImportacao, ErroCanal, db.ErroBanco) as e:
+        erro_infra = str(e)
+
+    return templates.TemplateResponse(
+        "importar.html",
+        _base(
+            request,
+            _periodo(None, None),
+            contas=contas,
+            conta_id=conta_id,
+            previa=previa,
+            rotulo_situacao=servico_importacao.ROTULO_SITUACAO,
+            explica_situacao=servico_importacao.EXPLICA_SITUACAO,
+            cor_situacao=servico_importacao.COR_SITUACAO,
+            ja_importado=servico_importacao.JA_IMPORTADO,
+            erro_infra=erro_infra,
+        ),
+    )
+
+
+@app.post("/produtos/importar")
+async def produtos_importar(request: Request):
+    usuario = auth.usuario_da_sessao(request)
+    form = await request.form()
+    conta_id = form.get("conta_id") or ""
+    volta = f"/produtos/importar?conta_id={conta_id}"
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        r = await servico_importacao.importar(
+            conta_id, form.getlist("anuncio_id"), usuario
+        )
+    except (auth.SemPermissao, servico_importacao.ErroImportacao, ErroCanal,
+            db.ErroBanco) as e:
+        return _volta(volta, erro=str(e))
+
+    servico_consulta.limpar_cache()
+    partes = [f"{r['criados']} produto(s) criado(s)",
+              f"{r['vinculados']} anúncio(s) vinculado(s)"]
+    if r["variacoes"]:
+        partes.append(f"{r['variacoes']} variação(ões)")
+    if r["fotos"]:
+        partes.append(f"{r['fotos']} foto(s)")
+    aviso = ", ".join(partes) + "."
+    if r["problemas"]:
+        aviso += f" {len(r['problemas'])} anúncio(s) ficaram de fora: " + "; ".join(
+            f"{p['titulo'][:40]} ({p['erro']})" for p in r["problemas"][:3]
+        )
+    return _volta("/produtos", aviso=aviso)
 
 
 @app.get("/produtos/novo", response_class=HTMLResponse)
@@ -1037,6 +1126,88 @@ async def produto_remover(request: Request, produto_id: str):
         return _volta(f"/produtos/{produto_id}", erro=str(e))
     servico_consulta.limpar_cache()
     return _volta("/produtos", aviso="Produto removido.")
+
+# ===========================================================================
+# estoque
+# ===========================================================================
+@app.get("/estoque", response_class=HTMLResponse)
+async def estoque_tela(request: Request, produto: str = "", q: str = ""):
+    erro_infra, linhas, movimentos = "", [], []
+    try:
+        linhas = await servico_estoque.posicao()
+        movimentos = await servico_estoque.historico(produto)
+    except db.ErroBanco as e:
+        erro_infra = str(e)
+
+    if q:
+        alvo = q.strip().lower()
+        linhas = [
+            l for l in linhas
+            if alvo in l["sku"].lower() or alvo in l["produto"].lower()
+        ]
+
+    # o livro mostra SKU e titulo, nao uuid
+    nomes = {l["produto_id"]: l["produto"] for l in linhas}
+    for m in movimentos:
+        m["produto_nome"] = nomes.get(m.get("produto_id"), m.get("sku"))
+
+    return templates.TemplateResponse(
+        "estoque.html",
+        _base(
+            request,
+            _periodo(None, None),
+            linhas=linhas,
+            resumo_estoque=servico_estoque.resumo(linhas),
+            alertas_estoque=servico_estoque.alertas(linhas),
+            movimentos=movimentos,
+            busca=q,
+            rotulo_motivo=servico_estoque.ROTULO_MOTIVO,
+            rotulo_situacao=servico_estoque.ROTULO_SITUACAO,
+            explica_situacao=servico_estoque.EXPLICA_SITUACAO,
+            cor_situacao=servico_estoque.COR_SITUACAO,
+            erro_infra=erro_infra,
+        ),
+    )
+
+
+@app.post("/estoque/movimento")
+async def estoque_movimento(
+    request: Request,
+    produto_id: str = Form(...),
+    variacao_id: str = Form(""),
+    quantidade: str = Form(...),
+    motivo: str = Form(servico_estoque.ENTRADA),
+    observacao: str = Form(""),
+):
+    """Entrada, devolucao ou ajuste. Tudo passa por aqui e tudo vira livro."""
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        try:
+            delta = int(str(quantidade).strip())
+        except ValueError:
+            raise servico_estoque.ErroEstoque("A quantidade precisa ser um número.")
+        if motivo not in servico_estoque.ROTULO_MOTIVO:
+            raise servico_estoque.ErroEstoque("Motivo inválido.")
+        if motivo == servico_estoque.ENVIO:
+            raise servico_estoque.ErroEstoque(
+                "A baixa por envio é automática: ela sai dos pedidos despachados, "
+                "não da mão."
+            )
+        # entrada e devolucao sempre somam; ajuste aceita os dois sinais
+        if motivo in (servico_estoque.ENTRADA, servico_estoque.DEVOLUCAO):
+            delta = abs(delta)
+
+        linha = await servico_estoque.movimentar(
+            produto_id, variacao_id or None, delta, motivo, usuario, observacao
+        )
+    except (auth.SemPermissao, servico_estoque.ErroEstoque, db.ErroBanco) as e:
+        return _volta("/estoque", erro=str(e))
+    return _volta(
+        "/estoque",
+        aviso=f"{linha['sku']}: {delta:+d}. Ficou com {linha['estoque']}.",
+    )
+
 
 # ===========================================================================
 # contas

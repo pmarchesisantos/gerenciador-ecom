@@ -876,6 +876,11 @@ def variacoes(c: TestClient) -> None:
     css = c.get("/static/estilo.css").text
     checar("dica nao herda o caixa-alta do rotulo",
            ".dica {" in css and "text-transform: none" in css)
+    # um <select> cresce ate caber a opcao mais longa e estourava o cartao
+    checar("controle nao fica mais largo que o container",
+           "select, textarea {" in css and "max-width: 100%" in css)
+    checar("campo do movimento pode encolher",
+           ".form-movimento > * { min-width: 0; max-width: 100%; }" in css)
 
 
 # ---------------------------------------------------------------------------
@@ -1055,6 +1060,468 @@ def ficha_do_produto(c: TestClient) -> None:
          scontas.resumo, sc.ficha, sc.sugerir) = originais
 
 
+# ---------------------------------------------------------------------------
+# Banco de mentira: tabelas em memoria, so o bastante para o servico de
+# estoque rodar. Vale o custo porque a baixa automatica e a unica parte do
+# sistema que escreve sozinha, sem ninguem clicar - um erro ali corroi o
+# estoque em silencio, e so apareceria quando faltasse par para despachar.
+# ---------------------------------------------------------------------------
+class BancoFalso:
+    def __init__(self, tabelas):
+        self.t = {k: [dict(r) for r in v] for k, v in tabelas.items()}
+
+    @staticmethod
+    def _casa(linha, filtros):
+        for campo, cond in (filtros or {}).items():
+            if not str(cond).startswith("eq."):
+                continue
+            if str(linha.get(campo)) != str(cond)[3:]:
+                return False
+        return True
+
+    async def selecionar(self, tabela, filtros=None, ordem=None):
+        return [dict(r) for r in self.t.get(tabela, []) if self._casa(r, filtros)]
+
+    async def um(self, tabela, filtros):
+        linhas = await self.selecionar(tabela, filtros)
+        return linhas[0] if linhas else None
+
+    async def inserir(self, tabela, dados):
+        linha = dict(dados)
+        linha.setdefault("id", "mov-%d" % (len(self.t.setdefault(tabela, [])) + 1))
+        linha.setdefault("criado_em", "2026-11-04T12:00:00+00:00")
+        self.t[tabela].append(linha)
+        return linha
+
+    async def inserir_varios(self, tabela, linhas, ignorar_repetidos=False):
+        gravados = []
+        for dados in linhas:
+            # imita o indice unico parcial (canal, pedido_id, sku) do envio
+            if dados.get("motivo") == "envio":
+                chave = (dados.get("canal"), dados.get("pedido_id"), dados.get("sku"))
+                existe = any(
+                    (r.get("canal"), r.get("pedido_id"), r.get("sku")) == chave
+                    and r.get("motivo") == "envio"
+                    for r in self.t.get(tabela, [])
+                )
+                if existe:
+                    if ignorar_repetidos:
+                        continue
+                    raise AssertionError("violou o indice unico: %s" % (chave,))
+            gravados.append(await self.inserir(tabela, dados))
+        return gravados
+
+    async def atualizar(self, tabela, filtros, dados):
+        for linha in self.t.get(tabela, []):
+            if self._casa(linha, filtros):
+                linha.update(dados)
+                return dict(linha)
+        return None
+
+    async def registrar_evento(self, *a, **k):
+        return None
+
+
+def _pedido_falso(pedido_id, canal, envio, quando, itens):
+    from app.modelos import ItemPedido, Pedido
+
+    return Pedido(
+        canal=canal, conta="loja", pedido_id=pedido_id, criado_em=quando,
+        grupo=EFETIVADA, status_origem="", envio=envio,
+        itens=[ItemPedido(sku=s, titulo=s, quantidade=q) for s, q in itens],
+    )
+
+
+def estoque_regras() -> None:
+    print("estoque (regras):")
+    from app.servicos import estoque as se
+
+    checar("zero e zerado", se.situacao(0, 5) == se.ZERADO)
+    checar("no minimo ja e acabando", se.situacao(5, 5) == se.ACABANDO)
+    checar("abaixo do minimo e acabando", se.situacao(3, 5) == se.ACABANDO)
+    checar("acima do minimo esta ok", se.situacao(6, 5) == se.OK)
+    checar("negativo conta como zerado", se.situacao(-2, 5) == se.ZERADO)
+
+    produto = {"id": "p1", "sku": "AZERA", "titulo": "Tenis", "estoque": 7,
+               "estoque_minimo": 4, "controla_estoque": True}
+    linha = se._linha(produto, None)
+    checar("sem grade, o saldo e o do produto", linha["estoque"] == 7)
+    checar("sem grade, nao ha variacao", linha["variacao_id"] is None)
+
+    v = {"id": "v1", "sku": "AZERA-PRETO-39", "estoque": 2, "estoque_minimo": None,
+         "eixo1_valor": "Preto", "eixo2_valor": "39", "ativa": True}
+    linha = se._linha(produto, v)
+    checar("variacao sem minimo herda o do produto", linha["minimo"] == 4)
+    checar("variacao mostra os dois eixos", linha["variacao"] == "Preto / 39")
+    checar("variacao com 2 e minimo 4 esta acabando",
+           linha["situacao"] == se.ACABANDO)
+
+    v2 = dict(v, estoque_minimo=1, estoque=2)
+    checar("minimo proprio da variacao manda",
+           se._linha(produto, v2)["situacao"] == se.OK)
+
+    base = se._linha(produto, None)
+    checar("produto sem controle sai dos avisos",
+           se.alertas([dict(base, situacao=se.ZERADO, controla=False)]) == [])
+    checar("variacao inativa sai dos avisos",
+           se.alertas([dict(base, situacao=se.ZERADO, ativa=False)]) == [])
+    checar("zerado entra nos avisos",
+           len(se.alertas([dict(base, situacao=se.ZERADO)])) == 1)
+
+    r = se.resumo([
+        dict(base, estoque=10, situacao=se.OK),
+        dict(base, estoque=0, situacao=se.ZERADO),
+        dict(base, estoque=3, situacao=se.ACABANDO),
+        dict(base, estoque=99, situacao=se.OK, controla=False),
+    ])
+    checar("resumo ignora quem nao controla", r["itens"] == 3, str(r))
+    checar("resumo soma as unidades", r["pares"] == 13, str(r))
+    checar("resumo conta zerados e acabando",
+           r["zerados"] == 1 and r["acabando"] == 1, str(r))
+
+
+def estoque_baixa() -> None:
+    print("estoque (baixa automatica):")
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    from app import db as db_real
+    from app.servicos import estoque as se
+
+    comeco = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    banco = BancoFalso({
+        "produtos": [{"id": "p1", "sku": "AZERA", "titulo": "Tenis Azera",
+                      "estoque": 0, "estoque_minimo": 5, "controla_estoque": True}],
+        "produto_variacoes": [
+            {"id": "v39", "produto_id": "p1", "sku": "AZERA-PRETO-39",
+             "estoque": 10, "eixo1_valor": "Preto", "eixo2_valor": "39", "ativa": True},
+            {"id": "v42", "produto_id": "p1", "sku": "AZERA-PRETO-42",
+             "estoque": 6, "eixo1_valor": "Preto", "eixo2_valor": "42", "ativa": True},
+        ],
+        "produto_anuncios": [],
+        # o controle comecou aqui: e a entrada que a pessoa digitou
+        "estoque_movimentos": [
+            {"id": "m0", "produto_id": "p1", "variacao_id": "v39",
+             "sku": "AZERA-PRETO-39", "delta": 10, "motivo": "entrada",
+             "criado_em": comeco.isoformat()},
+            {"id": "m1", "produto_id": "p1", "variacao_id": "v42",
+             "sku": "AZERA-PRETO-42", "delta": 6, "motivo": "entrada",
+             "criado_em": comeco.isoformat()},
+        ],
+    })
+
+    originais = {n: getattr(db_real, n) for n in
+                 ("selecionar", "um", "inserir", "inserir_varios", "atualizar",
+                  "registrar_evento")}
+    for nome in originais:
+        setattr(db_real, nome, getattr(banco, nome))
+    try:
+        depois = comeco + timedelta(days=1)
+        antes_do_controle = comeco - timedelta(days=10)
+        pedidos = [
+            _pedido_falso("A1", "mercadolivre", "enviado", depois,
+                          [("AZERA-PRETO-39", 2)]),
+            _pedido_falso("A2", "mercadolivre", "entregue", depois,
+                          [("AZERA-PRETO-42", 1)]),
+            # ainda nao saiu daqui
+            _pedido_falso("A3", "shopee", "a_enviar", depois,
+                          [("AZERA-PRETO-39", 5)]),
+            # vendido antes de existir controle: o saldo digitado ja desconta
+            _pedido_falso("A4", "mercadolivre", "enviado", antes_do_controle,
+                          [("AZERA-PRETO-39", 4)]),
+            # SKU que nao esta no catalogo
+            _pedido_falso("A5", "tiktok", "enviado", depois, [("DESCONHECIDO", 1)]),
+        ]
+
+        r = asyncio.run(se.conciliar(pedidos, {"id": "u1"}))
+        checar("baixou so os despachados", r["baixados"] == 2, str(r["baixados"]))
+        checar("somou as unidades certas", r["pares"] == 3, str(r["pares"]))
+        saldo = {v["sku"]: v["estoque"] for v in banco.t["produto_variacoes"]}
+        checar("39 saiu de 10 para 8", saldo["AZERA-PRETO-39"] == 8, str(saldo))
+        checar("42 saiu de 6 para 5", saldo["AZERA-PRETO-42"] == 5, str(saldo))
+        checar("pedido a enviar nao descontou", saldo["AZERA-PRETO-39"] != 3)
+        checar("SKU fora do catalogo e reportado",
+               [s["sku"] for s in r["sem_cadastro"]] == ["DESCONHECIDO"],
+               str(r["sem_cadastro"]))
+        envios = [m for m in banco.t["estoque_movimentos"] if m["motivo"] == "envio"]
+        checar("o livro registra o pedido que causou a baixa",
+               sorted(m["pedido_id"] for m in envios) == ["A1", "A2"])
+        checar("o livro diz em quanto ficou",
+               {m["sku"]: m["saldo_depois"] for m in envios}
+               == {"AZERA-PRETO-39": 8, "AZERA-PRETO-42": 5})
+
+        # a prova que importa: rodar de novo nao pode mexer em nada
+        r2 = asyncio.run(se.conciliar(pedidos, {"id": "u1"}))
+        saldo2 = {v["sku"]: v["estoque"] for v in banco.t["produto_variacoes"]}
+        checar("segunda passada nao desconta de novo", r2["baixados"] == 0,
+               str(r2["baixados"]))
+        checar("saldo intacto depois do F5", saldo2 == saldo, str(saldo2))
+
+        # o mesmo pedido com mais um par depois: so a diferenca entra
+        pedidos.append(_pedido_falso("A6", "mercadolivre", "enviado", depois,
+                                     [("AZERA-PRETO-39", 3)]))
+        r3 = asyncio.run(se.conciliar(pedidos, {"id": "u1"}))
+        saldo3 = {v["sku"]: v["estoque"] for v in banco.t["produto_variacoes"]}
+        checar("pedido novo desconta normalmente",
+               r3["baixados"] == 1 and saldo3["AZERA-PRETO-39"] == 5, str(saldo3))
+
+        # movimento manual: entrada soma e deixa rastro
+        linha = asyncio.run(se.movimentar("p1", "v39", 10, se.ENTRADA, {"id": "u1"},
+                                          "NF 777"))
+        checar("entrada soma no saldo", linha["estoque"] == 15, str(linha["estoque"]))
+        checar("entrada volta a situacao para ok", linha["situacao"] == se.OK)
+        ultimo = banco.t["estoque_movimentos"][-1]
+        checar("entrada guarda a observacao", ultimo["observacao"] == "NF 777")
+
+        # nao deixa o saldo ficar negativo
+        try:
+            asyncio.run(se.movimentar("p1", "v42", -99, se.AJUSTE, {"id": "u1"}))
+            checar("ajuste nao pode zerar abaixo de zero", False, "nao levantou")
+        except se.ErroEstoque as e:
+            checar("ajuste nao pode zerar abaixo de zero", "5" in str(e), str(e))
+    finally:
+        for nome, fn in originais.items():
+            setattr(db_real, nome, fn)
+
+
+def tela_estoque(c: TestClient) -> None:
+    print("tela de estoque:")
+    from app.servicos import estoque as se
+
+    linhas = [
+        {"produto_id": "p1", "variacao_id": "v39", "produto": "Tenis Azera",
+         "sku": "AZERA-PRETO-39", "variacao": "Preto / 39", "estoque": 0,
+         "minimo": 5, "situacao": se.ZERADO, "controla": True, "ativa": True},
+        {"produto_id": "p1", "variacao_id": "v42", "produto": "Tenis Azera",
+         "sku": "AZERA-PRETO-42", "variacao": "Preto / 42", "estoque": 3,
+         "minimo": 5, "situacao": se.ACABANDO, "controla": True, "ativa": True},
+        {"produto_id": "p2", "variacao_id": None, "produto": "Meia", "sku": "MEIA",
+         "variacao": "", "estoque": 40, "minimo": 5, "situacao": se.OK,
+         "controla": True, "ativa": True},
+    ]
+    movimentos = [
+        {"id": "m1", "produto_id": "p1", "sku": "AZERA-PRETO-39", "delta": -2,
+         "saldo_depois": 0, "motivo": "envio", "pedido_id": "2000012345",
+         "canal": "mercadolivre", "observacao": None,
+         "criado_em": "2026-11-03T10:00:00+00:00"},
+        {"id": "m2", "produto_id": "p1", "sku": "AZERA-PRETO-39", "delta": 10,
+         "saldo_depois": 10, "motivo": "entrada", "pedido_id": None, "canal": None,
+         "observacao": "NF 1234", "criado_em": "2026-11-01T10:00:00+00:00"},
+    ]
+
+    originais = (se.posicao, se.historico)
+    try:
+        se.posicao = lambda *a, **k: _pronto(linhas)
+        se.historico = lambda *a, **k: _pronto(movimentos)
+
+        r = c.get("/estoque")
+        checar("/estoque abre", r.status_code == 200, "HTTP %s" % r.status_code)
+        checar("mostra o que tem de cada item",
+               "AZERA-PRETO-39" in r.text and "AZERA-PRETO-42" in r.text)
+        checar("aviso de reposicao aparece",
+               "sem estoque" in r.text.lower() and "acabando" in r.text.lower())
+        checar("aviso diz quantos restam", "restam" in r.text)
+        # MEIA aparece na tabela e no seletor de movimento; o que importa e
+        # que ela NAO esteja dentro do aviso de reposicao
+        aviso = r.text.split('alerta-estoque', 1)[-1].split('</div>', 1)[0]
+        checar("item saudavel nao entra no aviso", "MEIA" not in aviso)
+        checar("o aviso lista justamente os que faltam",
+               "AZERA-PRETO-39" in aviso and "AZERA-PRETO-42" in aviso)
+        checar("livro mostra o pedido que causou a baixa", "2000012345" in r.text)
+        checar("livro mostra a entrada manual", "NF 1234" in r.text)
+        checar("baixa por envio nao e oferecida como motivo manual",
+               'value="envio"' not in r.text)
+        checar("totais na tela", "Unidades em casa" in r.text)
+
+        r = c.get("/produtos")
+        checar("aviso tambem na tela de produtos",
+               "AZERA-PRETO-39" in r.text, "HTTP %s" % r.status_code)
+
+        logar(c, "leitor")
+        r = c.get("/estoque")
+        checar("leitor ve, mas nao movimenta",
+               r.status_code == 200 and 'action="/estoque/movimento"' not in r.text)
+        r = c.post("/estoque/movimento",
+                   data={"produto_id": "p1", "quantidade": "5", "motivo": "entrada"},
+                   follow_redirects=False)
+        checar("leitor nao registra movimento",
+               r.status_code == 303 and "erro=" in r.headers.get("location", ""))
+        logar(c, "dono")
+
+        r = c.post("/estoque/movimento",
+                   data={"produto_id": "p1", "quantidade": "3", "motivo": "envio"},
+                   follow_redirects=False)
+        checar("baixa por envio nao se faz na mao",
+               "erro=" in r.headers.get("location", ""))
+        r = c.post("/estoque/movimento",
+                   data={"produto_id": "p1", "quantidade": "abc", "motivo": "entrada"},
+                   follow_redirects=False)
+        checar("quantidade nao numerica e recusada",
+               "erro=" in r.headers.get("location", ""))
+    finally:
+        se.posicao, se.historico = originais
+
+
+# item do Mercado Livre como o /items devolve, com grade de cor e tamanho
+ITEM_ML = {
+    "id": "MLB123456789",
+    "title": "Tenis Azera Masculino Casual",
+    "seller_custom_field": "AZERA",
+    "price": 129.9,
+    "available_quantity": 16,
+    "condition": "new",
+    "category_id": "MLB108746",
+    "permalink": "https://produto.mercadolivre.com.br/MLB-123456789",
+    "attributes": [
+        {"id": "BRAND", "value_name": "Azera"},
+        {"id": "MATERIAL", "value_name": "Sintetico"},
+        {"id": "SEM_VALOR", "value_name": None},
+    ],
+    "pictures": [
+        {"secure_url": "https://http2.mlstatic.com/a.jpg"},
+        {"url": "https://http2.mlstatic.com/b.jpg"},
+    ],
+    "variations": [
+        {"id": 991, "seller_custom_field": "AZERA-PRETO-39", "price": 129.9,
+         "available_quantity": 10,
+         "attribute_combinations": [
+             {"name": "Cor", "value_name": "Preto"},
+             {"name": "Tamanho", "value_name": "39"}]},
+        {"id": 992, "seller_custom_field": "", "price": 139.9,
+         "available_quantity": 6,
+         "attribute_combinations": [
+             {"name": "Cor", "value_name": "Branco"},
+             {"name": "Tamanho", "value_name": "42"}]},
+    ],
+}
+
+
+def importacao_traducao() -> None:
+    print("importacao (traducao do anuncio):")
+    from app.canais.mercadolivre import MercadoLivre
+
+    a = MercadoLivre._traduzir_anuncio(ITEM_ML)
+    checar("pega o SKU do vendedor, nao o codigo do ML", a["sku"] == "AZERA")
+    checar("marca sai dos atributos", a["marca"] == "Azera")
+    checar("atributo sem valor e descartado", "SEM_VALOR" not in a["atributos"])
+    checar("categoria vem junto", a["categoria_id"] == "MLB108746")
+    checar("condicao traduzida", a["condicao"] == "novo")
+    checar("eixos saem das combinacoes", a["eixos"] == ["Cor", "Tamanho"],
+           str(a["eixos"]))
+    checar("duas variacoes", len(a["variacoes"]) == 2)
+    checar("variacao traz os valores dos dois eixos",
+           a["variacoes"][0]["valores"] == {"Cor": "Preto", "Tamanho": "39"})
+    checar("estoque por variacao", a["variacoes"][0]["estoque"] == 10)
+    checar("fotos aceitam secure_url e url", len(a["fotos"]) == 2, str(a["fotos"]))
+
+    vazio = MercadoLivre._traduzir_anuncio({"id": "MLB1", "title": "X"})
+    checar("anuncio sem grade nao inventa eixo", vazio["eixos"] == [])
+    checar("anuncio sem nada nao quebra",
+           vazio["variacoes"] == [] and vazio["fotos"] == [])
+
+
+def importacao_previa() -> None:
+    print("importacao (previa):")
+    import asyncio
+
+    from app import db as db_real
+    from app.canais import mercadolivre as ml
+    from app.servicos import contas as scontas
+    from app.servicos import importacao as si
+
+    banco = BancoFalso({
+        # ja existe um produto com o SKU AZERA: tem de vincular, nao duplicar
+        "produtos": [{"id": "p-ja", "sku": "AZERA", "titulo": "Tenis Azera (daqui)"}],
+        "produto_anuncios": [
+            {"id": "a1", "produto_id": "p-ja", "conta_id": "c1",
+             "anuncio_id": "MLB999", "sku_canal": "OUTRO"},
+        ],
+    })
+    conta = {"id": "c1", "canal": "mercadolivre", "apelido": "Minha loja",
+             "access_token_cripto": "x", "ativa": True}
+
+    originais_db = {n: getattr(db_real, n) for n in ("selecionar", "um", "inserir")}
+    orig_buscar = scontas.buscar
+    orig_pode = scontas.pode_ver
+    orig_token = scontas.garantir_token
+    orig_listar = ml.MercadoLivre.listar_anuncios
+    try:
+        for nome in originais_db:
+            setattr(db_real, nome, getattr(banco, nome))
+        scontas.buscar = lambda *a, **k: _pronto(conta)
+        scontas.pode_ver = lambda *a, **k: _pronto(True)
+        scontas.garantir_token = lambda *a, **k: _pronto(dict(conta, _access="t"))
+
+        traduzido = ml.MercadoLivre._traduzir_anuncio(ITEM_ML)
+        outro = dict(traduzido, anuncio_id="MLB999", sku="JA-VINCULADO")
+        novo = dict(traduzido, anuncio_id="MLB777", sku="NOVO-SKU",
+                    titulo="Chinelo", variacoes=[], eixos=[])
+
+        async def falsa(self, c, teto=200):
+            return [traduzido, outro, novo]
+
+        ml.MercadoLivre.listar_anuncios = falsa
+
+        p = asyncio.run(si.previa("c1", {"id": "u1"}))
+        por_id = {i["anuncio_id"]: i for i in p["itens"]}
+        checar("SKU que ja existe aqui vira vinculo",
+               por_id["MLB123456789"]["situacao"] == si.VINCULA,
+               por_id["MLB123456789"]["situacao"])
+        checar("e aponta para o produto existente",
+               por_id["MLB123456789"]["produto_existente"] == "p-ja")
+        checar("anuncio ja vinculado e marcado como importado",
+               por_id["MLB999"]["situacao"] == si.JA_IMPORTADO)
+        checar("SKU inedito vira produto novo",
+               por_id["MLB777"]["situacao"] == si.NOVO)
+        checar("contadores batem",
+               (p["novos"], p["vincula"], p["ja_importados"]) == (1, 1, 1),
+               str((p["novos"], p["vincula"], p["ja_importados"])))
+        checar("novos aparecem primeiro na lista",
+               p["itens"][0]["situacao"] == si.NOVO)
+
+        # anuncio sem SKU proprio cai no codigo do anuncio, nunca em branco
+        sem_sku = dict(traduzido, anuncio_id="MLB555", sku="")
+
+        async def so_um(self, c, teto=200):
+            return [sem_sku]
+
+        ml.MercadoLivre.listar_anuncios = so_um
+        p2 = asyncio.run(si.previa("c1", {"id": "u1"}))
+        checar("anuncio sem SKU usa o codigo do anuncio",
+               p2["itens"][0]["sku"] == "MLB555", p2["itens"][0]["sku"])
+
+        # importar sem marcar nada precisa reclamar, nao gravar
+        try:
+            asyncio.run(si.importar("c1", [], {"id": "u1"}))
+            checar("importar vazio e recusado", False, "nao levantou")
+        except si.ErroImportacao:
+            checar("importar vazio e recusado", True)
+    finally:
+        for nome, fn in originais_db.items():
+            setattr(db_real, nome, fn)
+        scontas.buscar = orig_buscar
+        scontas.pode_ver = orig_pode
+        scontas.garantir_token = orig_token
+        ml.MercadoLivre.listar_anuncios = orig_listar
+
+
+def tela_importar(c: TestClient) -> None:
+    print("tela de importacao:")
+    logar(c, "leitor")
+    r = c.get("/produtos/importar", follow_redirects=False)
+    checar("leitor nao importa", r.status_code == 303)
+    logar(c, "dono")
+
+    r = c.get("/produtos/importar")
+    checar("/produtos/importar abre", r.status_code == 200, "HTTP %s" % r.status_code)
+    checar("explica que SKU repetido nao duplica",
+           "n&atilde;o vira produto duplicado" in r.text or
+           "não vira produto duplicado" in r.text)
+    r = c.get("/produtos")
+    checar("botao de importar na tela de produtos",
+           "/produtos/importar" in r.text)
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -1073,6 +1540,12 @@ def main() -> int:
         variacoes(c)
         categorias_campos()
         ficha_do_produto(c)
+        estoque_regras()
+        estoque_baixa()
+        tela_estoque(c)
+        importacao_traducao()
+        importacao_previa()
+        tela_importar(c)
         botoes(c)
         responsivo(c)
         entrada(c)

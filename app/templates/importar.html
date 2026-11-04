@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block titulo %}Importar anúncios - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+<h1>Importar anúncios</h1>
+<p class="sub">
+  Traz para o catálogo o que já está publicado na plataforma — com grade, preço,
+  atributos e fotos. Nada é gravado antes de você conferir e marcar.
+</p>
+
+<div class="acoes" style="margin-bottom:18px">
+  <a class="botao neutro" href="/produtos">Voltar para produtos</a>
+</div>
+
+<div class="faixa info">
+  <strong>SKU repetido não vira produto duplicado</strong>
+  Quando o anúncio tem o SKU de um produto que já está no catálogo, ele é
+  <b>amarrado</b> a esse produto em vez de criar um segundo. É isso que faz o
+  painel somar as vendas dos três canais em uma linha só, em vez de três
+  linhas separadas.
+</div>
+
+{# ------------------------------------------------------------- escolher loja #}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>De qual loja?</h3>
+    <p class="sub">
+      A leitura usa a chave já conectada e não custa nada. Hoje funciona no
+      Mercado Livre; Shopee e TikTok entram quando as contas estiverem ligadas.
+    </p>
+  </div>
+
+  {% if contas %}
+    <form class="filtros" method="get" action="/produtos/importar">
+      <label class="campo" style="flex:1">
+        Loja
+        <select name="conta_id" style="min-width:100%">
+          {% for c in contas %}
+            <option value="{{ c.id }}" {{ 'selected' if c.id == conta_id }}>
+              {{ c.canal_rotulo }} — {{ c.apelido }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="botao" type="submit">Ler anúncios</button>
+    </form>
+  {% else %}
+    <p class="sub" style="margin:0">
+      Nenhuma loja conectada ainda. Conecte uma em <a href="/contas">Contas</a>.
+    </p>
+  {% endif %}
+</div>
+
+{% if previa %}
+  {% set pendentes = previa.itens | rejectattr('situacao', 'equalto', ja_importado) | list %}
+
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>{{ previa.itens|length }} anúncio(s) encontrados</h3>
+      <p class="sub">
+        {{ previa.novos }} viram produto novo &middot;
+        {{ previa.vincula }} só são vinculados a produto que já existe aqui &middot;
+        {{ previa.ja_importados }} já estavam importados.
+      </p>
+    </div>
+
+    {% if pendentes %}
+      <form method="post" action="/produtos/importar">
+        <input type="hidden" name="conta_id" value="{{ conta_id }}">
+
+        <div class="rolagem">
+          <table>
+            <thead><tr>
+              <th style="width:34px">
+                <input type="checkbox" id="marcar-todos" checked
+                       title="Marcar ou desmarcar todos">
+              </th>
+              <th>SKU</th><th>Anúncio</th><th class="num">Preço</th>
+              <th class="num">Estoque</th><th class="num">Grade</th>
+              <th>O que vai acontecer</th>
+            </tr></thead>
+            <tbody>
+            {% for i in previa.itens %}
+              <tr class="{{ 'linha-apagada' if i.situacao == ja_importado }}">
+                <td>
+                  {% if i.situacao != ja_importado %}
+                    <input type="checkbox" name="anuncio_id" value="{{ i.anuncio_id }}"
+                           class="marca-anuncio" checked>
+                  {% endif %}
+                </td>
+                <td class="cru">{{ i.sku }}</td>
+                <td>
+                  {% if i.url %}
+                    <a href="{{ i.url }}" target="_blank" rel="noopener">{{ i.titulo }}</a>
+                  {% else %}{{ i.titulo }}{% endif %}
+                  <br><span class="cru" style="font-size:11.5px">{{ i.anuncio_id }}</span>
+                </td>
+                <td class="num">{{ i.preco|moeda if i.preco else '-' }}</td>
+                <td class="num">{{ i.estoque|inteiro }}</td>
+                <td class="num">
+                  {% if i.variacoes %}
+                    {{ i.variacoes|length }}
+                    <br><span class="sub" style="font-size:11px">{{ i.eixos|join(' / ') }}</span>
+                  {% else %}
+                    <span class="selo cinza">única</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="selo {{ cor_situacao[i.situacao] }}"
+                        title="{{ explica_situacao[i.situacao] }}">
+                    {{ rotulo_situacao[i.situacao] }}
+                  </span>
+                  {% if i.produto_existente_titulo %}
+                    <br><span class="sub" style="font-size:11.5px">
+                      a <a href="/produtos/{{ i.produto_existente }}">{{ i.produto_existente_titulo }}</a>
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="barra-salvar" style="margin-top:18px">
+          <button class="botao" type="submit">
+            Importar os marcados
+          </button>
+          <span class="sub">
+            <span id="conta-marcados">{{ pendentes|length }}</span> marcado(s).
+            Fotos entram como referência à imagem do próprio anúncio.
+          </span>
+        </div>
+      </form>
+    {% else %}
+      <div class="faixa ok" style="margin:0">
+        <strong>Tudo já está no catálogo</strong>
+        Os {{ previa.itens|length }} anúncios desta loja já estão vinculados a
+        produtos daqui.
+      </div>
+    {% endif %}
+  </div>
+{% elif conta_id and not erro_infra %}
+  <div class="cartao vazio">
+    <h3>Nenhum anúncio ativo nesta loja</h3>
+    <p>A leitura traz só os anúncios ativos da plataforma.</p>
+  </div>
+{% endif %}
+
+<script>
+  (function () {
+    var todos = document.getElementById('marcar-todos');
+    if (!todos) return;
+    var marcas = document.querySelectorAll('.marca-anuncio');
+    var conta = document.getElementById('conta-marcados');
+
+    function recontar() {
+      var n = 0;
+      marcas.forEach(function (m) { if (m.checked) n++; });
+      if (conta) conta.textContent = n;
+    }
+    todos.addEventListener('change', function () {
+      marcas.forEach(function (m) { m.checked = todos.checked; });
+      recontar();
+    });
+    marcas.forEach(function (m) { m.addEventListener('change', recontar); });
+    recontar();
+  })();
+</script>
+
+{% endblock %}

@@ -455,6 +455,37 @@
         todas as numerações pesam praticamente o mesmo.
       </p>
     </div>
+
+    <div class="cartao">
+      <div class="cartao-cabeca">
+        <h3>Controle de estoque</h3>
+        <p class="sub">
+          Quando avisar que está na hora de repor. A posi&ccedil;&atilde;o e o hist&oacute;rico
+          ficam na tela de <a href="/estoque">Estoque</a>.
+        </p>
+      </div>
+
+      <label class="marca-caixa">
+        <input type="checkbox" name="controla_estoque" value="1"
+               {{ 'checked' if novo or produto.controla_estoque }}>
+        Controlar o estoque deste produto
+      </label>
+      <p class="sub" style="margin:10px 0 16px">
+        Desmarque para produto que voc&ecirc; n&atilde;o guarda em casa &mdash; feito sob
+        encomenda, ou enviado direto pelo fornecedor. Ele sai dos avisos e deixa
+        de receber baixa autom&aacute;tica.
+      </p>
+
+      <label class="campo" style="max-width:260px">
+        Avisar quando sobrar
+        <input type="text" name="estoque_minimo" inputmode="numeric"
+               value="{{ produto.estoque_minimo if produto and produto.estoque_minimo is not none else 5 }}">
+        <span class="dica">
+          Unidades. Com grade, vale para cada combina&ccedil;&atilde;o: o 39 avisa sozinho,
+          sem esperar o 42 acabar.
+        </span>
+      </label>
+    </div>
   </section>
 
   {% if pode_editar %}

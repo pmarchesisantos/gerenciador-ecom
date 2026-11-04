@@ -1,0 +1,42 @@
+{#
+  Aviso de reposição, usado na tela de estoque, na de pedidos e na de produtos.
+
+  Fica em um arquivo só porque a mesma informação tem de dizer a mesma coisa nos
+  três lugares. Esperar `alertas_estoque` definido; qualquer tela que não passe
+  a variável simplesmente não mostra nada.
+#}
+{% if alertas_estoque %}
+  {% set zerados = alertas_estoque | selectattr('situacao', 'equalto', 'zerado') | list %}
+  <div class="faixa {{ 'erro' if zerados else 'atencao' }} alerta-estoque">
+    <strong>
+      {% if zerados %}
+        {{ zerados|length }} item(ns) sem estoque
+        {%- if alertas_estoque|length > zerados|length %}
+          e mais {{ alertas_estoque|length - zerados|length }} acabando
+        {%- endif %}
+      {% else %}
+        {{ alertas_estoque|length }} item(ns) acabando
+      {% endif %}
+    </strong>
+    <ul class="lista-reposicao">
+      {% for l in alertas_estoque[:8] %}
+        <li>
+          <a href="/produtos/{{ l.produto_id }}"><span class="cru">{{ l.sku }}</span></a>
+          {%- if l.variacao %} <span class="sub">{{ l.variacao }}</span>{% endif %}
+          &mdash;
+          {% if l.estoque <= 0 %}
+            <b>acabou</b>
+          {% else %}
+            restam <b>{{ l.estoque }}</b> (mínimo {{ l.minimo }})
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% if alertas_estoque|length > 8 %}
+      <p>E mais {{ alertas_estoque|length - 8 }} item(ns).</p>
+    {% endif %}
+    {% if rota != '/estoque' %}
+      <p><a href="/estoque">Abrir o estoque para repor</a>.</p>
+    {% endif %}
+  </div>
+{% endif %}

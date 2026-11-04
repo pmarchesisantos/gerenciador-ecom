@@ -332,6 +332,99 @@ class MercadoLivre(CanalBase):
         }
 
     # ------------------------------------------------------------------
+    # anuncios ja publicados (para importar o que ja existe na loja)
+    # ------------------------------------------------------------------
+    async def listar_anuncios(self, conta: dict, teto: int = 200) -> list[dict]:
+        """Os anuncios da loja, com variacoes e atributos, ja normalizados.
+
+        Duas chamadas por lote: a busca devolve so os codigos, e o multiget
+        (/items?ids=) traz os detalhes de ate 20 de uma vez. Com um anuncio
+        por chamada isso levaria minutos e estouraria o tempo da Vercel.
+        """
+        if not conta.get("loja_id"):
+            raise ErroCanal("Conta sem seller_id. Conecte a conta novamente.")
+
+        codigos: list[str] = []
+        offset = 0
+        while len(codigos) < teto:
+            j = await self._get(
+                conta,
+                f"/users/{conta['loja_id']}/items/search",
+                {"status": "active", "limit": 50, "offset": offset},
+            )
+            lote = j.get("results") or []
+            codigos.extend(lote)
+            total = (j.get("paging") or {}).get("total", 0)
+            offset += 50
+            if not lote or offset >= total:
+                break
+        codigos = codigos[:teto]
+        if not codigos:
+            return []
+
+        anuncios: list[dict] = []
+        for i in range(0, len(codigos), 20):
+            fatia = codigos[i : i + 20]
+            resposta = await self._get(conta, "/items", {"ids": ",".join(fatia)})
+            for envelope in resposta if isinstance(resposta, list) else []:
+                if envelope.get("code") != 200:
+                    continue
+                corpo = envelope.get("body") or {}
+                if corpo.get("id"):
+                    anuncios.append(self._traduzir_anuncio(corpo))
+        return anuncios
+
+    @staticmethod
+    def _traduzir_anuncio(item: dict) -> dict:
+        """Item do ML -> o formato que o catalogo daqui entende."""
+        atributos = {
+            a.get("id"): a.get("value_name")
+            for a in (item.get("attributes") or [])
+            if a.get("id") and a.get("value_name")
+        }
+
+        # nos eixos, o ML chama de attribute_combinations o que para nos e
+        # Variacao1/Variacao2 - cor e tamanho, na pratica
+        eixos: list[str] = []
+        variacoes = []
+        for v in item.get("variations") or []:
+            combinacao = v.get("attribute_combinations") or []
+            for c in combinacao:
+                nome = c.get("name")
+                if nome and nome not in eixos:
+                    eixos.append(nome)
+            valores = {c.get("name"): c.get("value_name") for c in combinacao}
+            variacoes.append(
+                {
+                    "anuncio_variacao_id": str(v.get("id") or ""),
+                    "sku": (v.get("seller_custom_field") or "").strip(),
+                    "valores": valores,
+                    "preco": v.get("price"),
+                    "estoque": int(v.get("available_quantity") or 0),
+                }
+            )
+
+        return {
+            "anuncio_id": item.get("id"),
+            "titulo": (item.get("title") or "").strip(),
+            "sku": (item.get("seller_custom_field") or "").strip(),
+            "preco": item.get("price"),
+            "estoque": int(item.get("available_quantity") or 0),
+            "condicao": "novo" if item.get("condition") == "new" else "usado",
+            "categoria_id": item.get("category_id") or "",
+            "marca": atributos.get("BRAND") or "",
+            "atributos": atributos,
+            "eixos": eixos[:2],
+            "variacoes": variacoes,
+            "fotos": [
+                f.get("secure_url") or f.get("url")
+                for f in (item.get("pictures") or [])
+                if f.get("secure_url") or f.get("url")
+            ][:10],
+            "url": item.get("permalink") or "",
+        }
+
+    # ------------------------------------------------------------------
     # leitura
     # ------------------------------------------------------------------
     async def _get(self, conta: dict, caminho: str, params: dict | None = None) -> dict:

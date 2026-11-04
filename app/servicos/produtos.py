@@ -14,6 +14,7 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from app import armazenamento, db
+from app.servicos import estoque as servico_estoque
 
 
 class ErroProduto(RuntimeError):
@@ -155,6 +156,9 @@ def _limpar(dados: dict) -> dict:
         "largura_cm": _numero(dados.get("largura_cm"), "Largura", inteiro=True),
         "altura_cm": _numero(dados.get("altura_cm"), "Altura", inteiro=True),
         "medidas_por_variacao": bool(dados.get("medidas_por_variacao")),
+        "controla_estoque": bool(dados.get("controla_estoque")),
+        "estoque_minimo": _numero(dados.get("estoque_minimo"), "Estoque mínimo",
+                                  inteiro=True) or 0,
         "eixo1_nome": texto("eixo1_nome"),
         "eixo2_nome": texto("eixo2_nome"),
         # categoria na plataforma: o id e o que vale na publicacao, o nome e
@@ -208,7 +212,18 @@ async def atualizar(produto_id: str, dados: dict, usuario: dict) -> dict:
     for campo in ("atributos", "atributos_ml"):
         if dados.get(campo) is not None:
             campos[campo] = dados[campo]
+
+    antes = await buscar(produto_id)
     atualizado = await db.atualizar("produtos", {"id": f"eq.{produto_id}"}, campos)
+    if antes and not await variacoes(produto_id):
+        # sem grade, o estoque do produto e o saldo de verdade
+        try:
+            await servico_estoque.anotar_ajuste(
+                produto_id, None, campos["sku"],
+                int(antes.get("estoque") or 0), int(campos["estoque"] or 0), usuario,
+            )
+        except Exception:
+            pass
     await db.registrar_evento(
         "produto", f"produto {campos['sku']} alterado", usuario=usuario
     )
@@ -361,6 +376,7 @@ async def gerar_variacoes(
 
 async def salvar_variacoes(produto_id: str, linhas: list[dict], usuario: dict) -> None:
     """Grava preço, estoque, SKU e GTIN de cada linha da grade."""
+    antes = {v["id"]: v for v in await variacoes(produto_id)}
     for linha in linhas:
         vid = linha.get("id")
         if not vid:
@@ -391,6 +407,16 @@ async def salvar_variacoes(produto_id: str, linhas: list[dict], usuario: dict) -
                 "ativa": bool(linha.get("ativa")),
             },
         )
+        anterior = antes.get(vid)
+        if anterior is not None:
+            try:
+                await servico_estoque.anotar_ajuste(
+                    produto_id, vid, sku,
+                    int(anterior.get("estoque") or 0), estoque, usuario,
+                    observacao="editado na grade de variações",
+                )
+            except Exception:
+                pass
     await db.registrar_evento("produto", "grade de variações salva", usuario=usuario)
 
 

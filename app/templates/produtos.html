@@ -8,6 +8,8 @@
   plataforma, passa a ter um dono só.
 </p>
 
+
+{% include "_alerta_estoque.html" %}
 <div class="cartao">
   <form class="filtros" method="get" action="/produtos">
     <label class="campo" style="flex:1">
@@ -18,6 +20,7 @@
     {% if busca %}<a class="botao neutro" href="/produtos">Limpar</a>{% endif %}
     {% if pode('operador') %}
       <a class="botao contorno" href="/produtos/novo">+ Novo produto</a>
+      <a class="botao contorno" href="/produtos/importar">Importar das plataformas</a>
     {% endif %}
   </form>
 </div>
@@ -83,6 +86,7 @@
        É isso que vai unificar as vendas no painel.</p>
     {% if pode('operador') %}
       <a class="botao" href="/produtos/novo">Cadastrar primeiro produto</a>
+      <a class="botao contorno" href="/produtos/importar">Importar o que já anunciei</a>
     {% endif %}
   </div>
 {% endif %}

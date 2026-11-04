@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block titulo %}Estoque - Sistema-Ecom{% endblock %}
+
+{% block conteudo %}
+{% set pode_editar = pode('operador') %}
+
+<h1>Estoque</h1>
+<p class="sub">
+  O que está aqui com você. Cada número tem um porquê: entrou tanto, saiu tanto
+  nestes pedidos, sobrou isto. A baixa dos pedidos despachados é automática.
+</p>
+
+{% include "_alerta_estoque.html" %}
+
+{# ------------------------------------------------------------- indicadores #}
+<div class="rolagem" data-rolagem-lateral>
+  <div class="tiles-soltas">
+    <div class="tile neutro">
+      <div class="rotulo">Itens controlados</div>
+      <div class="valor">{{ resumo_estoque.itens|inteiro }}</div>
+      <div class="apoio">cada cor e tamanho conta como um item</div>
+    </div>
+    <div class="tile acento">
+      <div class="rotulo">Unidades em casa</div>
+      <div class="valor">{{ resumo_estoque.pares|inteiro }}</div>
+      <div class="apoio">soma de tudo o que o sistema acha que voc&ecirc; tem</div>
+    </div>
+    <div class="tile warning">
+      <div class="rotulo">Acabando</div>
+      <div class="valor">{{ resumo_estoque.acabando|inteiro }}</div>
+      <div class="apoio">chegaram no m&iacute;nimo &mdash; hora de repor</div>
+    </div>
+    <div class="tile critical">
+      <div class="rotulo">Zerados</div>
+      <div class="valor">{{ resumo_estoque.zerados|inteiro }}</div>
+      <div class="apoio">se vender, n&atilde;o tem o que despachar</div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------- movimentação #}
+{% if pode_editar and linhas %}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Registrar movimento</h3>
+    <p class="sub">
+      Chegou mercadoria, voltou uma devolução, ou você contou a prateleira e o
+      número estava errado. Tudo o que você fizer aqui fica no histórico abaixo.
+    </p>
+  </div>
+
+  <form method="post" action="/estoque/movimento" class="form-movimento">
+    <label class="campo largo">
+      Item
+      <select name="item" id="item-movimento" required style="min-width:100%">
+        <option value="">— escolha o item —</option>
+        {% for l in linhas %}
+          <option value="{{ l.produto_id }}|{{ l.variacao_id or '' }}">
+            {{ l.sku }} — {{ l.produto }}{% if l.variacao %} ({{ l.variacao }}){% endif %}
+            · tem {{ l.estoque }}
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="campo">
+      Motivo
+      <select name="motivo" style="min-width:100%">
+        <option value="entrada">Entrada (chegou mercadoria)</option>
+        <option value="devolucao">Devolução (o par voltou)</option>
+        <option value="ajuste">Ajuste (contei e estava errado)</option>
+      </select>
+    </label>
+    <label class="campo">
+      Quantidade
+      <input type="text" name="quantidade" inputmode="numeric" required
+             placeholder="10">
+      <span class="dica">No ajuste, use <b>-3</b> para tirar.</span>
+    </label>
+    <label class="campo largo">
+      Observação
+      <input type="text" name="observacao" placeholder="NF 1234, fornecedor...">
+    </label>
+    <input type="hidden" name="produto_id" id="produto-movimento">
+    <input type="hidden" name="variacao_id" id="variacao-movimento">
+    <button class="botao" type="submit">Registrar</button>
+  </form>
+</div>
+{% endif %}
+
+{# ----------------------------------------------------------------- posição #}
+{% if linhas %}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Posição</h3>
+    <p class="sub">O que falta repor aparece primeiro.</p>
+  </div>
+
+  <form class="filtros" method="get" action="/estoque" style="margin-bottom:14px">
+    <label class="campo" style="flex:1">
+      Buscar
+      <input type="text" name="q" value="{{ busca }}" placeholder="SKU ou produto...">
+    </label>
+    <button class="botao" type="submit">Buscar</button>
+    {% if busca %}<a class="botao neutro" href="/estoque">Limpar</a>{% endif %}
+  </form>
+
+  <div class="rolagem">
+    <table>
+      <thead><tr>
+        <th>SKU</th><th>Produto</th><th>Variação</th>
+        <th class="num">Tem</th><th class="num">Mínimo</th><th>Situação</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for l in linhas %}
+        <tr>
+          <td class="cru">{{ l.sku }}</td>
+          <td><a href="/produtos/{{ l.produto_id }}">{{ l.produto }}</a></td>
+          <td>{{ l.variacao or '-' }}</td>
+          <td class="num"><b>{{ l.estoque|inteiro }}</b></td>
+          <td class="num">{{ l.minimo|inteiro }}</td>
+          <td>
+            {% if l.controla %}
+              <span class="selo {{ cor_situacao[l.situacao] }}"
+                    title="{{ explica_situacao[l.situacao] }}">
+                {{ rotulo_situacao[l.situacao] }}
+              </span>
+            {% else %}
+              <span class="selo cinza" title="Este produto está marcado para não controlar estoque.">
+                não controla
+              </span>
+            {% endif %}
+          </td>
+          <td class="num">
+            <a class="botao contorno pequeno" href="/estoque?produto={{ l.produto_id }}">
+              Histórico
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="sub" style="margin:14px 0 0">
+    O <b>mínimo</b> é quando o item entra em "acabando". Começa em 5 e você muda
+    na ficha do produto, aba Envio. Produto com grade controla por combinação:
+    o 39 pode estar acabando enquanto o 42 está cheio.
+  </p>
+</div>
+{% elif not erro_infra and supabase_ok %}
+  <div class="cartao vazio">
+    <h3>Nenhum produto para controlar</h3>
+    <p>O estoque é contado por produto cadastrado.<br>
+       Cadastre um produto e o saldo dele aparece aqui.</p>
+    <a class="botao" href="/produtos">Ir para produtos</a>
+  </div>
+{% endif %}
+
+{# --------------------------------------------------------------- histórico #}
+{% if movimentos %}
+<div class="cartao">
+  <div class="cartao-cabeca">
+    <h3>Histórico{% if request.query_params.get('produto') %} deste produto{% endif %}</h3>
+    <p class="sub">
+      É isto que explica o saldo. A baixa por envio traz o pedido que a causou.
+      {% if request.query_params.get('produto') %}
+        <a href="/estoque">Ver de todos os produtos</a>.
+      {% endif %}
+    </p>
+  </div>
+  <div class="rolagem">
+    <table>
+      <thead><tr>
+        <th>Quando</th><th>SKU</th><th>Produto</th><th>Motivo</th>
+        <th class="num">Mudança</th><th class="num">Ficou</th><th>Origem</th>
+      </tr></thead>
+      <tbody>
+      {% for m in movimentos %}
+        <tr>
+          <td>{{ m.criado_em|data }}</td>
+          <td class="cru">{{ m.sku }}</td>
+          <td>{{ m.produto_nome }}</td>
+          <td>{{ rotulo_motivo.get(m.motivo, m.motivo) }}</td>
+          <td class="num {{ 'positivo' if m.delta > 0 else 'negativo' }}">
+            {{ '+' if m.delta > 0 }}{{ m.delta }}
+          </td>
+          <td class="num">{{ m.saldo_depois if m.saldo_depois is not none else '-' }}</td>
+          <td>
+            {% if m.pedido_id %}
+              <span class="cru">{{ canais_rotulo.get(m.canal, m.canal) }} {{ m.pedido_id }}</span>
+            {% else %}
+              {{ m.observacao or '-' }}
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  // o <select> manda produto e variacao juntos; aqui eles voltam a ser dois campos
+  (function () {
+    var item = document.getElementById('item-movimento');
+    if (!item) return;
+    var produto = document.getElementById('produto-movimento');
+    var variacao = document.getElementById('variacao-movimento');
+    item.addEventListener('change', function () {
+      var partes = (item.value || '|').split('|');
+      produto.value = partes[0];
+      variacao.value = partes[1] || '';
+    });
+  })();
+</script>
+
+{% endblock %}

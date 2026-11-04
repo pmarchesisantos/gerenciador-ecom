@@ -335,3 +335,47 @@ grant all privileges on public.produto_variacoes to service_role;
 alter table public.produtos add column if not exists ml_categoria_id   text;
 alter table public.produtos add column if not exists ml_categoria_nome text;
 alter table public.produtos add column if not exists atributos_ml      jsonb not null default '{}'::jsonb;
+
+-- ---------------------------------------------------------------------------
+-- Estoque.
+--
+-- O saldo vive em produtos.estoque (ou produto_variacoes.estoque, quando ha
+-- grade). O livro abaixo nao duplica esse numero: ele EXPLICA como o numero
+-- chegou onde esta, e e o que torna a baixa automatica segura.
+--
+-- Sem o livro, cada F5 na tela de pedidos descontaria os mesmos envios de
+-- novo. Com ele, a baixa por envio e unica por (canal, pedido, sku) - o indice
+-- parcial la embaixo e quem garante isso no banco, nao a boa vontade do codigo.
+-- ---------------------------------------------------------------------------
+alter table public.produtos add column if not exists estoque_minimo   integer not null default 5;
+alter table public.produtos add column if not exists controla_estoque boolean not null default true;
+
+-- null = herda o minimo do produto. Um tamanho raro pode ter minimo proprio.
+alter table public.produto_variacoes add column if not exists estoque_minimo integer;
+
+create table if not exists public.estoque_movimentos (
+    id           uuid primary key default gen_random_uuid(),
+    produto_id   uuid not null references public.produtos (id) on delete cascade,
+    variacao_id  uuid references public.produto_variacoes (id) on delete cascade,
+    sku          text not null,
+    delta        integer not null,          -- positivo entra, negativo sai
+    saldo_depois integer,                   -- para a tela mostrar o antes/depois
+    motivo       text not null,             -- entrada | envio | ajuste | devolucao
+    pedido_id    text,
+    canal        text,
+    conta_id     uuid references public.contas (id) on delete set null,
+    observacao   text,
+    usuario_id   uuid,
+    criado_em    timestamptz not null default now()
+);
+
+-- a trava da baixa automatica: o mesmo envio nao desconta duas vezes
+create unique index if not exists estoque_mov_envio_unico
+    on public.estoque_movimentos (canal, pedido_id, sku)
+    where motivo = 'envio';
+
+create index if not exists estoque_mov_produto_idx
+    on public.estoque_movimentos (produto_id, criado_em desc);
+
+alter table public.estoque_movimentos enable row level security;
+grant all privileges on public.estoque_movimentos to service_role;

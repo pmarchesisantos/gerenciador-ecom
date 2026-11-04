@@ -82,6 +82,33 @@ async def inserir(tabela: str, dados: dict) -> dict:
     return linhas[0] if linhas else {}
 
 
+async def inserir_varios(
+    tabela: str, linhas: list[dict], ignorar_repetidos: bool = False
+) -> list[dict]:
+    """Insere um lote em uma chamada so e devolve o que REALMENTE entrou.
+
+    ignorar_repetidos usa o resolution=ignore-duplicates do PostgREST: linha
+    que bate em indice unico e pulada em silencio, em vez de derrubar o lote.
+    E o que deixa a baixa de estoque ser chamada quantas vezes for sem medo.
+
+    Devolver as linhas gravadas, e nao uma contagem, importa: quem chama
+    precisa saber exatamente quais entraram para nao descontar duas vezes o
+    que o indice unico recusou.
+    """
+    if not linhas:
+        return []
+    prefer = ["return=representation"]
+    if ignorar_repetidos:
+        prefer.append("resolution=ignore-duplicates")
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(
+            _url(tabela),
+            headers=_cabecalhos({"Prefer": ",".join(prefer)}),
+            json=linhas,
+        )
+    return _conferir(r) or []
+
+
 async def atualizar(tabela: str, filtros: dict[str, str], dados: dict) -> dict | None:
     async with httpx.AsyncClient(timeout=20) as c:
         r = await c.patch(
