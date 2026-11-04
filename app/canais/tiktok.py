@@ -474,6 +474,10 @@ class TikTokShop(CanalBase):
             # do despacho. "pronta" aqui significa "da para produzir daqui",
             # nao "o documento ja existe".
             etiqueta_pronta=bool(pacote) and envio == ENVIO_A_ENVIAR,
+            # AWAITING_COLLECTION ja teve o envio arranjado: a etiqueta existe
+            # e imprimir nao muda mais nada na plataforma. So AWAITING_SHIPMENT
+            # ainda precisa do aviso.
+            exige_despacho=status == "AWAITING_SHIPMENT",
             itens=itens,
             comprador=cru.get("buyer_email") or "-",
             valor_produtos=dec(pag.get("sub_total")) or sum((i.valor_total for i in itens), dec(0)),

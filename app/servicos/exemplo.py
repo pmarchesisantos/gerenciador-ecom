@@ -128,6 +128,10 @@ def pedidos(inicio: date, fim: date) -> list[Pedido]:
                 # a Shopee ainda nao
                 etiqueta_pronta=envio == ENVIO_A_ENVIAR
                 and canal in ("mercadolivre", "tiktok"),
+                # no TikTok, metade ainda espera o aviso de despacho
+                exige_despacho=envio == ENVIO_A_ENVIAR
+                and canal == "tiktok"
+                and i % 2 == 0,
                 itens=itens,
                 comprador=f"comprador{rnd.randrange(100, 999)}",
                 valor_produtos=produtos,

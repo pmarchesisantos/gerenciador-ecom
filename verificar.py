@@ -614,8 +614,23 @@ def etiquetas(c: TestClient) -> None:
     r = c.get("/pedidos?exemplo=1&envio=a_enviar")
     checar("a barra aparece quando ha o que imprimir",
            'id="barra-etiquetas"' in r.text)
-    checar("caixa diz se o canal despacha ao imprimir",
-           'data-despacha="1"' in r.text)
+    checar("caixa marca por pedido quem ainda precisa de despacho",
+           'data-despacha="1"' in r.text and 'data-despacha=""' in r.text)
+
+    from app.canais.tiktok import TikTokShop as _TT
+    conta_fake = {"apelido": "t", "extra": {}}
+    ja_arranjado = _TT()._traduzir(
+        {"id": "1", "status": "AWAITING_COLLECTION", "create_time": 1,
+         "packages": [{"id": "P1"}], "payment": {}, "line_items": []}, conta_fake)
+    a_arranjar = _TT()._traduzir(
+        {"id": "2", "status": "AWAITING_SHIPMENT", "create_time": 1,
+         "packages": [{"id": "P2"}], "payment": {}, "line_items": []}, conta_fake)
+    checar("ja arranjado: imprime sem mexer na plataforma",
+           ja_arranjado.pode_etiqueta and not ja_arranjado.exige_despacho)
+    checar("ainda nao arranjado: imprimir avisa a plataforma",
+           a_arranjar.pode_etiqueta and a_arranjar.exige_despacho)
+    checar("os dois continuam na fila de despacho",
+           ja_arranjado.envio == "a_enviar" and a_arranjar.envio == "a_enviar")
     checar("confirma antes de despachar",
            "realmente levar ao ponto de coleta" in r.text)
 

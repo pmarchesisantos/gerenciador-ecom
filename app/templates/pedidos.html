@@ -161,7 +161,7 @@
                 <input type="checkbox" name="pedido_id" value="{{ p.pedido_id }}"
                        class="marca-etiqueta" data-conta="{{ p.canal }}|{{ p.conta }}"
                        data-canal="{{ p.canal_rotulo }}"
-                       data-despacha="{{ '1' if canais[p.canal].despacha_ao_imprimir else '' }}">
+                       data-despacha="{{ '1' if p.exige_despacho else '' }}">
               {% endif %}
             </td>
           {% endif %}

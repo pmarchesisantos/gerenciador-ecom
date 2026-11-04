@@ -134,7 +134,8 @@ class Pedido:
     envio: str = ENVIO_DESCONHECIDO
     envio_origem: str = ""        # o texto cru do envio, quando existe
     envio_id: str = ""            # id do envio na plataforma (para a etiqueta)
-    etiqueta_pronta: bool = False  # a plataforma ja gerou o documento?
+    etiqueta_pronta: bool = False  # da para produzir a etiqueta daqui?
+    exige_despacho: bool = False   # imprimir vai precisar avisar a plataforma antes?
     itens: list[ItemPedido] = field(default_factory=list)
     comprador: str = ""
     valor_produtos: Decimal = Decimal("0")
