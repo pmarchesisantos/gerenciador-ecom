@@ -58,6 +58,8 @@
 
   --raio: 14px;
   --raio-p: 9px;
+  --botao-altura: 38px;
+  --botao-altura-p: 30px;
   --sombra: 0 1px 2px rgba(16, 21, 31, .04), 0 2px 8px rgba(16, 21, 31, .05);
   --sombra-alta: 0 2px 4px rgba(16, 21, 31, .05), 0 8px 24px rgba(16, 21, 31, .08);
   --transicao: .18s cubic-bezier(.4, 0, .2, 1);
@@ -443,7 +445,8 @@ label.campo {
   letter-spacing: .5px;
 }
 input[type=text], input[type=date], input[type=password], select {
-  padding: 9px 12px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+  box-sizing: border-box; height: var(--botao-altura); padding: 0 12px;
+  border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
   background: var(--papel); font-size: 14px; color: var(--tinta); min-width: 150px;
   font-family: inherit; transition: border-color var(--transicao), box-shadow var(--transicao);
 }
@@ -453,23 +456,34 @@ input:focus, select:focus {
 }
 ::placeholder { color: var(--tinta-3); }
 
+/* Uma escala so, e a mesma altura entre <a> e <button>.
+
+   Dois detalhes ja causaram diferenca entre os dois: o navegador nao herda
+   line-height em <button>, e aqui so a familia da fonte estava sendo
+   herdada. Por isso altura e entrelinha sao fixadas, em vez de deixadas ao
+   calculo do conteudo. flex:none e nowrap impedem que o botao encolha e
+   quebre o texto quando divide a linha com um campo que cresce.           */
 .botao {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 9px 16px; border-radius: var(--raio-p); cursor: pointer;
+  box-sizing: border-box; flex: none;
+  height: var(--botao-altura); padding: 0 16px; line-height: 1;
+  border-radius: var(--raio-p); cursor: pointer;
   border: 1px solid var(--acento); background: var(--acento); color: #fff;
-  font-size: 14px; font-weight: 600; text-decoration: none; font-family: inherit;
+  font-size: 14px; font-weight: 600; text-decoration: none;
+  font-family: inherit; white-space: nowrap;
   transition: background var(--transicao), box-shadow var(--transicao),
               transform var(--transicao), color var(--transicao);
 }
 .botao:hover { background: var(--acento-escuro); border-color: var(--acento-escuro); }
 .botao:active { transform: translateY(1px); }
-.botao.vazio  { background: var(--papel); color: var(--acento); }
-.botao.vazio:hover  { background: var(--acento-fundo); }
+.botao.contorno { background: var(--papel); color: var(--acento); }
+.botao.contorno:hover { background: var(--acento-fundo); }
 .botao.neutro { background: var(--papel); color: var(--tinta); border-color: var(--borda-forte); }
 .botao.neutro:hover { background: var(--papel-2); border-color: var(--tinta-3); }
 .botao.perigo { background: var(--papel); color: var(--critical); border-color: var(--critical); }
 .botao.perigo:hover { background: var(--critical-fundo); }
-.botao.pequeno { padding: 6px 12px; font-size: 13px; }
+.botao.pequeno { height: var(--botao-altura-p); padding: 0 12px; font-size: 13px; }
+.botao:disabled, .botao[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
 
 .acoes { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
 .atalhos { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
@@ -523,9 +537,12 @@ details.canal > summary::-webkit-details-marker { display: none; }
 details.canal[open] > summary { border-bottom: 1px solid var(--borda); }
 details.canal .corpo { padding: 18px 20px; }
 
-.vazio { text-align: center; color: var(--tinta-2); padding: 42px 20px; }
-.vazio h3 { color: var(--tinta); font-size: 17px; }
-.vazio p { margin: 8px 0 18px; }
+/* estado vazio de um cartao. O seletor e composto de proposito: ".vazio"
+   sozinho ja colidiu uma vez com o modificador de botao e inflou os botoes
+   contornados para 108px de altura. */
+.cartao.vazio { text-align: center; color: var(--tinta-2); padding: 42px 20px; }
+.cartao.vazio h3 { color: var(--tinta); font-size: 17px; }
+.cartao.vazio p { margin: 8px 0 18px; }
 
 footer.pe { padding: 26px 0 36px; color: var(--tinta-3); font-size: 12px; }
 
@@ -603,6 +620,7 @@ footer.pe { padding: 26px 0 36px; color: var(--tinta-3); font-size: 12px; }
   form.filtros label.campo { width: 100%; }
   form.filtros input, form.filtros select { width: 100%; min-width: 0; }
   form.filtros .botao { width: 100%; }
+  form.filtros input, form.filtros select { height: var(--botao-altura); }
   .acoes { flex-direction: column; align-items: stretch; }
   .acoes .botao { width: 100%; }
   .acoes form { width: 100%; }
@@ -662,11 +680,11 @@ body.sem-lateral .faixa { max-width: 420px; margin: 20px auto 0; }
   text-transform: none; letter-spacing: 0; font-size: 13px;
   color: var(--tinta-2); font-weight: 600; margin-bottom: 14px;
 }
-.entrada input { width: 100%; min-width: 0; padding: 11px 13px; }
+.entrada input { width: 100%; min-width: 0; height: 42px; }
 .entrada .dica {
   font-size: 12px; color: var(--tinta-3); font-weight: 400; text-transform: none;
 }
-.entrada .botao { width: 100%; padding: 12px 16px; font-size: 15px; margin-top: 6px; }
+.entrada .botao { width: 100%; height: 44px; font-size: 15px; margin-top: 6px; }
 .entrada .faixa { margin: 0 0 16px; }
 .rodape-entrada {
   margin: 18px 0 0; text-align: center; font-size: 13px; color: var(--tinta-2);
@@ -685,7 +703,6 @@ body.sem-lateral .faixa { max-width: 420px; margin: 20px auto 0; }
 }
 .barra-acao .contagem { font-size: 13px; color: var(--tinta-2); margin-left: auto; }
 .barra-acao .contagem.alerta { color: var(--critical); font-weight: 600; }
-.barra-acao .botao:disabled { opacity: .5; cursor: not-allowed; }
 .barra-acao .botao:disabled:hover { background: var(--acento); }
 input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--acento); cursor: pointer; }
 @media (max-width: 760px) {
@@ -706,7 +723,7 @@ input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--acento); c
 }
 .galeria .foto .botao { width: 100%; }
 input[type=file] {
-  padding: 9px 12px; border: 1px solid var(--borda-forte);
+  height: auto; padding: 9px 12px; border: 1px solid var(--borda-forte);
   border-radius: var(--raio-p); background: var(--papel);
   font-size: 13px; color: var(--tinta); font-family: inherit;
 }

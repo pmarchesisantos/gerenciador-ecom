@@ -17,7 +17,7 @@
     <button class="botao" type="submit">Buscar</button>
     {% if busca %}<a class="botao neutro" href="/produtos">Limpar</a>{% endif %}
     {% if pode('operador') %}
-      <a class="botao vazio" href="/produtos/novo">+ Novo produto</a>
+      <a class="botao contorno" href="/produtos/novo">+ Novo produto</a>
     {% endif %}
   </form>
 </div>
@@ -67,7 +67,7 @@
   <div class="cartao vazio">
     <h3>Nenhum produto encontrado</h3>
     <p>Nada com "{{ busca }}" no SKU, título ou marca.</p>
-    <a class="botao vazio" href="/produtos">Ver todos</a>
+    <a class="botao contorno" href="/produtos">Ver todos</a>
   </div>
 {% elif not erro_infra and supabase_ok %}
   <div class="cartao vazio">

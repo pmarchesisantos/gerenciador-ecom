@@ -11,7 +11,8 @@
 <div class="acoes" style="margin-bottom:18px">
   {% if pode('dono') %}
     {% for nome, c in canais.items() %}
-      <a class="botao {{ '' if nome == 'mercadolivre' else 'vazio' }}" href="/contas/nova?canal={{ nome }}">
+      {# os tres canais valem o mesmo aqui: nenhum e "a" acao principal #}
+      <a class="botao contorno" href="/contas/nova?canal={{ nome }}">
         + {{ c.rotulo }}
       </a>
     {% endfor %}
@@ -44,7 +45,7 @@
           <p class="sub" style="margin:6px 0 0">{{ c.situacao.detalhe }}</p>
         </div>
         <div class="acoes">
-          <a class="botao vazio pequeno" href="/contas/{{ c.id }}">Detalhes</a>
+          <a class="botao contorno pequeno" href="/contas/{{ c.id }}">Detalhes</a>
           {% if pode('operador') %}
             {% if c.situacao.codigo in ('nao_conectada', 'autorizacao_expirada', 'chave_perdida') %}
               <a class="botao pequeno" href="/contas/{{ c.id }}/conectar">Conectar loja</a>
@@ -141,7 +142,7 @@
       {% if pode('dono') %}
         <a class="botao" href="/contas/nova?canal=mercadolivre">Cadastrar Mercado Livre</a>
       {% endif %}
-      <a class="botao vazio" href="/ajuda">Ler o passo a passo primeiro</a>
+      <a class="botao contorno" href="/ajuda">Ler o passo a passo primeiro</a>
     </div>
   </div>
 {% endif %}

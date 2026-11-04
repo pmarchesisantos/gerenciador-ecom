@@ -753,6 +753,34 @@ def catalogo(c: TestClient) -> None:
     logar(c, "dono")
 
 
+def botoes(c: TestClient) -> None:
+    print("padronizacao dos botoes:")
+    logar(c, "dono")
+    css = c.get("/static/estilo.css").text
+
+    checar("altura do botao vem de uma variavel",
+           "--botao-altura: 38px" in css and "height: var(--botao-altura)" in css)
+    checar("botao pequeno usa a propria variavel",
+           "height: var(--botao-altura-p)" in css)
+    checar("entrelinha fixada, para <a> e <button> baterem",
+           "line-height: 1;" in css.split(".botao {")[1].split("}")[0])
+    checar("botao nao encolhe nem quebra o texto",
+           "flex: none" in css.split(".botao {")[1].split("}")[0]
+           and "white-space: nowrap" in css.split(".botao {")[1].split("}")[0])
+    checar("campo de formulario na mesma altura do botao",
+           "box-sizing: border-box; height: var(--botao-altura)" in css)
+
+    # a colisao que inflou os botoes contornados para 108px
+    checar("estado vazio nao colide com modificador de botao",
+           ".cartao.vazio {" in css and chr(10) + ".vazio {" not in css)
+    checar("modificador de contorno tem nome proprio",
+           ".botao.contorno" in css and ".botao.vazio" not in css)
+
+    for rota in ("/contas", "/produtos", "/pedidos?exemplo=1", "/usuarios"):
+        r = c.get(rota)
+        checar(f"{rota} sem o nome antigo", "botao vazio" not in r.text)
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -768,6 +796,7 @@ def main() -> int:
         senhas(c)
         etiquetas(c)
         catalogo(c)
+        botoes(c)
         responsivo(c)
         entrada(c)
     canais()
