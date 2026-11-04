@@ -834,3 +834,31 @@ textarea {
 
 /* campo dentro de celula de tabela nao precisa da altura cheia */
 table input[type=text] { height: 32px; font-size: 13px; }
+
+/* ------------------------------------------------------------------ */
+/* campos vindos da categoria da plataforma                            */
+/* ------------------------------------------------------------------ */
+
+/* As sugestoes de categoria sao forms irmaos, um por botao: embrulham em
+   linha e cada um ocupa so o proprio texto. */
+.lista-sugestoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.lista-sugestoes form { display: flex; min-width: 0; max-width: 100%; }
+.lista-sugestoes .botao { max-width: 100%; white-space: normal; height: auto; padding: 9px 14px; text-align: left; }
+.lista-sugestoes .botao .sub {
+  display: inline; margin: 0; color: inherit; opacity: .75; font-size: 12px;
+}
+
+/* O rotulo e caixa-alta; o selo dentro dele nao deve herdar isso. */
+.rotulo-campo { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.rotulo-campo .selo { text-transform: none; letter-spacing: 0; font-weight: 700; }
+
+/* numero + unidade: o numero manda, a unidade e estreita e nao encolhe. */
+.par-unidade { display: flex; gap: 8px; min-width: 0; }
+.par-unidade input { flex: 1 1 auto; min-width: 0; }
+.par-unidade select { flex: 0 0 auto; min-width: 88px; }
+
+.titulo-grupo {
+  margin: 22px 0 10px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--tinta-3);
+}
+.cartao > .titulo-grupo:first-of-type { margin-top: 4px; }

@@ -61,6 +61,7 @@ from app.modelos import (
 from app.servicos import consulta as servico_consulta
 from app.servicos import contas as servico_contas
 from app.servicos import exemplo as servico_exemplo
+from app.servicos import categorias as servico_categorias
 from app.servicos import produtos as servico_produtos
 from app.servicos import usuarios as servico_usuarios
 
@@ -750,6 +751,9 @@ async def produto_novo(request: Request):
             contas=[],
             grade=[],
             resumo_grade=servico_produtos.resumo_grade([]),
+            ficha_ml=None,
+            sugestoes=[],
+            erro_ml="",
         ),
     )
 
@@ -766,6 +770,14 @@ async def produto_criar(request: Request):
         form["atributos"] = servico_produtos.montar_atributos(
             bruto.getlist("atributo_chave"), bruto.getlist("atributo_valor")
         )
+        # campos vindos da categoria: chaveados pelo ID do atributo na
+        # plataforma, nao pelo rotulo que a tela mostra
+        if bruto.get("ml_campos_na_tela"):
+            form["atributos_ml"] = servico_categorias.montar_valores(
+                bruto.getlist("ml_atributo_id"),
+                bruto.getlist("ml_atributo_valor"),
+                bruto.getlist("ml_atributo_unidade"),
+            )
         novo = await servico_produtos.criar(form, usuario)
     except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
         return _volta("/produtos/novo", erro=str(e))
@@ -775,7 +787,7 @@ async def produto_criar(request: Request):
 
 
 @app.get("/produtos/{produto_id}", response_class=HTMLResponse)
-async def produto_detalhe(request: Request, produto_id: str):
+async def produto_detalhe(request: Request, produto_id: str, sugerir: int = 0):
     usuario = auth.usuario_da_sessao(request)
     erro_infra, produto, fotos, vinculos, contas, grade = "", None, [], [], [], []
     try:
@@ -791,6 +803,23 @@ async def produto_detalhe(request: Request, produto_id: str):
     if not produto and not erro_infra:
         return _volta("/produtos", erro="Produto não encontrado.")
 
+    # Campos que o anúncio pede. Vem da plataforma, nunca do nosso banco, e
+    # a falha nunca derruba a ficha: sem categoria escolhida ou sem conta
+    # conectada, a aba Especificação apenas explica o que fazer.
+    ficha_ml, sugestoes, erro_ml = None, [], ""
+    if produto:
+        try:
+            if sugerir:
+                sugestoes = await servico_categorias.sugerir(
+                    produto.get("titulo") or "", usuario
+                )
+            if produto.get("ml_categoria_id"):
+                ficha_ml = await servico_categorias.ficha(
+                    produto["ml_categoria_id"], usuario
+                )
+        except (servico_categorias.SemCanal, ErroCanal, db.ErroBanco) as e:
+            erro_ml = str(e)
+
     return templates.TemplateResponse(
         "produto_detalhe.html",
         _base(
@@ -803,8 +832,37 @@ async def produto_detalhe(request: Request, produto_id: str):
             contas_por_id={c["id"]: c for c in contas},
             grade=grade,
             resumo_grade=servico_produtos.resumo_grade(grade),
+            ficha_ml=ficha_ml,
+            sugestoes=sugestoes,
+            erro_ml=erro_ml,
+            faltando_ml=servico_categorias.faltando(
+                ficha_ml or {}, (produto or {}).get("atributos_ml") or {}
+            ),
             erro_infra=erro_infra,
         ),
+    )
+
+
+@app.post("/produtos/{produto_id}/categoria")
+async def produto_categoria(
+    request: Request,
+    produto_id: str,
+    categoria_id: str = Form(...),
+    categoria_nome: str = Form(""),
+):
+    """Fixa a categoria escolhida. Dela sai a lista de campos obrigatórios."""
+    usuario = auth.usuario_da_sessao(request)
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        await servico_produtos.definir_categoria(
+            produto_id, categoria_id, categoria_nome, usuario
+        )
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(f"/produtos/{produto_id}", erro=str(e))
+    return _volta(
+        f"/produtos/{produto_id}",
+        aviso=f"Categoria definida: {categoria_nome or categoria_id}. "
+        "Os campos dela estão na aba Especificação.",
     )
 
 
@@ -820,6 +878,14 @@ async def produto_salvar(request: Request, produto_id: str):
         form["atributos"] = servico_produtos.montar_atributos(
             bruto.getlist("atributo_chave"), bruto.getlist("atributo_valor")
         )
+        # campos vindos da categoria: chaveados pelo ID do atributo na
+        # plataforma, nao pelo rotulo que a tela mostra
+        if bruto.get("ml_campos_na_tela"):
+            form["atributos_ml"] = servico_categorias.montar_valores(
+                bruto.getlist("ml_atributo_id"),
+                bruto.getlist("ml_atributo_valor"),
+                bruto.getlist("ml_atributo_unidade"),
+            )
         await servico_produtos.atualizar(produto_id, form, usuario)
     except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
         return _volta(f"/produtos/{produto_id}", erro=str(e))

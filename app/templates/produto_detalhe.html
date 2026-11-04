@@ -1,4 +1,54 @@
 {% extends "base.html" %}
+
+{#
+  Um campo que a categoria exige, desenhado conforme o tipo que a plataforma
+  informou. As tres listas (id, valor, unidade) precisam sair alinhadas: cada
+  chamada emite exatamente um input de cada nome, nessa ordem, e o servidor
+  junta pelo indice.
+#}
+{% macro campo_da_categoria(c, salvos, editavel) %}
+  {% set atual = salvos.get(c.id, '') %}
+  <label class="campo">
+    <span class="rotulo-campo">
+      {{ c.nome }}
+      {%- if c.obrigatorio %} <span class="selo vermelho">obrigat&oacute;rio</span>{% endif %}
+    </span>
+    <input type="hidden" name="ml_atributo_id" value="{{ c.id }}">
+
+    {% if c.tipo == 'lista' %}
+      <select name="ml_atributo_valor" style="min-width:100%" {{ 'disabled' if not editavel }}>
+        <option value="">&mdash; escolha &mdash;</option>
+        {% for v in c.valores %}
+          <option value="{{ v }}" {{ 'selected' if v == atual }}>{{ v }}</option>
+        {% endfor %}
+      </select>
+      <input type="hidden" name="ml_atributo_unidade" value="">
+
+    {% elif c.tipo == 'numero_unidade' %}
+      {# "40 cm" volta para o formulario como 40 + cm #}
+      {% set partes = atual.rsplit(' ', 1) if atual else [] %}
+      {% set casado = partes|length == 2 and partes[1] in c.unidades %}
+      <span class="par-unidade">
+        <input type="text" name="ml_atributo_valor" inputmode="decimal"
+               value="{{ partes[0] if casado else atual }}" {{ 'disabled' if not editavel }}>
+        <select name="ml_atributo_unidade" {{ 'disabled' if not editavel }}>
+          {% for u in c.unidades %}
+            <option value="{{ u }}"
+              {{ 'selected' if u == (partes[1] if casado else c.unidade_padrao) }}>{{ u }}</option>
+          {% endfor %}
+        </select>
+      </span>
+
+    {% else %}
+      <input type="text" name="ml_atributo_valor" style="min-width:100%"
+             inputmode="{{ 'decimal' if c.tipo == 'numero' else 'text' }}"
+             value="{{ atual }}" {{ 'disabled' if not editavel }}>
+      <input type="hidden" name="ml_atributo_unidade" value="">
+    {% endif %}
+
+    {% if c.dica %}<span class="dica">{{ c.dica }}</span>{% endif %}
+  </label>
+{% endmacro %}
 {% block titulo %}{{ produto.titulo if produto else 'Novo produto' }} - Sistema-Ecom{% endblock %}
 
 {% block conteudo %}
@@ -46,6 +96,73 @@
     </button>
   {% endif %}
 </div>
+
+
+{% if not novo %}
+{# ---------------------------------------------- categoria na plataforma #}
+<section class="painel-aba" data-painel="especificacao" hidden>
+  <div class="cartao">
+    <div class="cartao-cabeca">
+      <h3>Categoria no Mercado Livre</h3>
+      <p class="sub">
+        Quem decide quais campos o an&uacute;ncio exige &eacute; a categoria, e quem
+        responde isso &eacute; a pr&oacute;pria plataforma. Essa consulta n&atilde;o custa nada
+        e usa a chave que voc&ecirc; j&aacute; conectou.
+      </p>
+    </div>
+
+    {% if produto.ml_categoria_id %}
+      <p style="margin:0 0 14px">
+        <strong>{{ ficha_ml.caminho if ficha_ml and ficha_ml.caminho else (produto.ml_categoria_nome or 'categoria definida') }}</strong>
+        <span class="cru">{{ produto.ml_categoria_id }}</span>
+      </p>
+    {% else %}
+      <p class="sub" style="margin:0 0 14px">
+        Nenhuma categoria definida ainda &mdash; por isso a lista de campos
+        obrigat&oacute;rios abaixo est&aacute; vazia.
+      </p>
+    {% endif %}
+
+    {% if erro_ml %}
+      <div class="faixa atencao" style="margin:0 0 14px">
+        <strong>N&atilde;o consegui perguntar &agrave; plataforma</strong>{{ erro_ml }}
+      </div>
+    {% endif %}
+
+    {% if sugestoes %}
+      <p class="sub" style="margin:0 0 10px">
+        O Mercado Livre leu o t&iacute;tulo <span class="cru">{{ produto.titulo }}</span>
+        e sugere estas categorias, da mais prov&aacute;vel para a menos. Clique na certa:
+      </p>
+      <div class="lista-sugestoes">
+        {% for sug in sugestoes %}
+          <form method="post" action="/produtos/{{ produto.id }}/categoria">
+            <input type="hidden" name="categoria_id" value="{{ sug.categoria_id }}">
+            <input type="hidden" name="categoria_nome" value="{{ sug.nome }}">
+            <button class="botao {{ '' if loop.first else 'contorno' }}" type="submit"
+                    {{ 'disabled' if not pode_editar }}>
+              {{ loop.index }}. {{ sug.nome }}
+              {%- if sug.dominio and sug.dominio != sug.nome %} <span class="sub">({{ sug.dominio }})</span>{% endif %}
+            </button>
+          </form>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if pode_editar %}
+      <div class="acoes" style="margin-top:16px">
+        <a class="botao contorno pequeno" href="/produtos/{{ produto.id }}?sugerir=1">
+          {{ 'Sugerir de novo pelo título' if sugestoes else 'Sugerir categoria pelo título' }}
+        </a>
+      </div>
+      <p class="sub" style="margin:12px 0 0">
+        A sugest&atilde;o usa o t&iacute;tulo <strong>j&aacute; salvo</strong>. Se voc&ecirc; acabou de
+        mudar o t&iacute;tulo, salve antes de pedir.
+      </p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 {# =================================================== formulário do produto #}
 <form method="post" action="{{ '/produtos/novo' if novo else '/produtos/' ~ produto.id }}">
@@ -124,12 +241,75 @@
 
   {# ------------------------------------------------------- especificação #}
   <section class="painel-aba" data-painel="especificacao" hidden>
+    {% if ficha_ml %}
+      {% set salvos = (produto.atributos_ml or {}) if produto else {} %}
+      <input type="hidden" name="ml_campos_na_tela" value="1">
+
+      <div class="cartao">
+        <div class="cartao-cabeca">
+          <h3>Campos que a categoria exige</h3>
+          <p class="sub">
+            Lista vinda do Mercado Livre para
+            <strong>{{ ficha_ml.nome }}</strong>. &Eacute; a fonte da verdade: muda de
+            categoria para categoria e a plataforma pode alterar sem avisar, ent&atilde;o
+            o sistema pergunta em vez de chutar.
+          </p>
+        </div>
+
+        {% if faltando_ml %}
+          <div class="faixa atencao" style="margin:0 0 16px">
+            <strong>{{ faltando_ml|length }} campo(s) obrigat&oacute;rio(s) em branco</strong>
+            {{ faltando_ml|join(', ') }}. O an&uacute;ncio n&atilde;o sobe sem eles.
+          </div>
+        {% else %}
+          <div class="faixa ok" style="margin:0 0 16px">
+            <strong>Obrigat&oacute;rios completos</strong>
+            Os {{ (ficha_ml.obrigatorios or [])|length }} campos exigidos por esta
+            categoria est&atilde;o preenchidos.
+          </div>
+        {% endif %}
+
+        {% if ficha_ml.obrigatorios %}
+          <h4 class="titulo-grupo">Obrigat&oacute;rios</h4>
+          <div class="grade g2" style="gap:12px">
+            {% for c in ficha_ml.obrigatorios %}{{ campo_da_categoria(c, salvos, pode_editar) }}{% endfor %}
+          </div>
+        {% endif %}
+
+        {% if ficha_ml.por_variacao %}
+          <h4 class="titulo-grupo">Preenchidos por varia&ccedil;&atilde;o</h4>
+          <p class="sub" style="margin:0 0 10px">
+            Estes a plataforma recebe em cada combina&ccedil;&atilde;o, n&atilde;o no produto:
+            {{ ficha_ml.por_variacao | map(attribute='nome') | join(', ') }}.
+            O lugar deles &eacute; a aba <strong>Varia&ccedil;&otilde;es</strong>.
+          </p>
+        {% endif %}
+
+        {% if ficha_ml.opcionais %}
+          <h4 class="titulo-grupo">Opcionais que ajudam a aparecer</h4>
+          <p class="sub" style="margin:0 0 10px">
+            N&atilde;o travam a publica&ccedil;&atilde;o, mas s&atilde;o os filtros que o comprador usa
+            na busca. Em ordem de relev&acirc;ncia segundo o pr&oacute;prio Mercado Livre.
+          </p>
+          <div class="grade g2" style="gap:12px">
+            {% for c in ficha_ml.opcionais %}{{ campo_da_categoria(c, salvos, pode_editar) }}{% endfor %}
+          </div>
+          {% if ficha_ml.opcionais_de_fora %}
+            <p class="sub" style="margin:14px 0 0">
+              Esta categoria aceita outros {{ ficha_ml.opcionais_de_fora }} atributos
+              opcionais, de relev&acirc;ncia menor, que n&atilde;o cabem nesta tela.
+            </p>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
+
     <div class="cartao">
       <div class="cartao-cabeca">
-        <h3>Especificação</h3>
+        <h3>Outros atributos</h3>
         <p class="sub">
-          Atributos que cada plataforma pede na ficha do produto — material, gênero,
-          país de origem. Nome à esquerda, valor à direita.
+          Pares livres, para o que a categoria do Mercado Livre não pede mas outra
+          plataforma pode querer. Nome à esquerda, valor à direita.
         </p>
       </div>
 
@@ -157,8 +337,8 @@
         </button>
       </div>
       <p class="sub" style="margin:14px 0 0">
-        Linha sem nome é descartada ao salvar. Os nomes exatos variam por categoria
-        em cada plataforma — o de/para fino entra quando a publicação for implementada.
+        Linha sem nome é descartada ao salvar. Diferente dos campos acima, estes
+        não têm equivalente garantido em nenhuma plataforma — são anotação sua.
       </p>
     </div>
   </section>

@@ -110,6 +110,18 @@ def permissoes(c: TestClient) -> None:
     r = c.get("/usuarios", follow_redirects=False)
     checar("operador nao entra em usuarios", r.status_code == 303)
 
+    # mudar a categoria grava no produto: leitor nao pode
+    r = c.post("/produtos/abc/categoria", data={"categoria_id": "MLB1"},
+               follow_redirects=False)
+    checar("operador nao e barrado na categoria", r.status_code == 303)
+    logar(c, "leitor")
+    r = c.post("/produtos/abc/categoria", data={"categoria_id": "MLB1"},
+               follow_redirects=False)
+    checar("leitor nao define categoria",
+           r.status_code == 303 and "erro=" in r.headers.get("location", ""),
+           r.headers.get("location", ""))
+    logar(c, "operador")
+
     for rota in ("/ajuda", "/saude"):
         r = c.get(rota, follow_redirects=False)
         checar(f"operador nao entra em {rota}", r.status_code == 303,
@@ -866,6 +878,183 @@ def variacoes(c: TestClient) -> None:
            ".dica {" in css and "text-transform: none" in css)
 
 
+# ---------------------------------------------------------------------------
+# resposta crua do ML, como /categories/{id}/attributes devolve
+ATRIBUTOS_ML = [
+    {"id": "BRAND", "name": "Marca", "value_type": "string",
+     "tags": {"required": True}, "hint": "Como aparece na etiqueta", "relevance": 1},
+    {"id": "MODEL", "name": "Modelo", "value_type": "string",
+     "tags": {"catalog_required": True}, "relevance": 1},
+    {"id": "FOOTWEAR_TYPE", "name": "Tipo de calcado", "value_type": "list",
+     "tags": {}, "values": [{"id": "1", "name": "Tenis"}, {"id": "2", "name": "Bota"}],
+     "relevance": 2},
+    {"id": "COLOR", "name": "Cor", "value_type": "list",
+     "tags": {"allow_variations": True}, "values": [{"id": "9", "name": "Branco"}]},
+    {"id": "SHAFT_HEIGHT", "name": "Altura do cano", "value_type": "number_unit",
+     "tags": {}, "allowed_units": [{"id": "cm", "name": "cm"}, {"id": "mm", "name": "mm"}],
+     "default_unit": "cm", "relevance": 3},
+    {"id": "ITEM_CONDITION", "name": "Condicao", "value_type": "list",
+     "tags": {"hidden": True, "read_only": True}, "values": [{"id": "x", "name": "Novo"}]},
+    {"id": "SELLER_SKU", "name": "SKU", "value_type": "string", "tags": {"fixed": True}},
+]
+
+
+def _pronto(valor):
+    """Embrulha um valor ja calculado em algo que da await."""
+
+    async def feito():
+        return valor
+
+    return feito()
+
+
+def categorias_campos() -> None:
+    print("campos da categoria:")
+    from app.servicos import categorias as sc
+
+    g = sc.organizar(ATRIBUTOS_ML)
+
+    def ids(lista):
+        return [c["id"] for c in lista]
+
+    checar("obrigatorio por required e por catalog_required",
+           ids(g["obrigatorios"]) == ["BRAND", "MODEL"], str(ids(g["obrigatorios"])))
+    checar("cor vai para o grupo de variacao",
+           ids(g["por_variacao"]) == ["COLOR"], str(ids(g["por_variacao"])))
+    todos = ids(g["obrigatorios"] + g["opcionais"] + g["por_variacao"])
+    checar("hidden/read_only/fixed ficam fora",
+           "ITEM_CONDITION" not in todos and "SELLER_SKU" not in todos)
+    checar("opcional sai na ordem de relevancia",
+           ids(g["opcionais"]) == ["FOOTWEAR_TYPE", "SHAFT_HEIGHT"],
+           str(ids(g["opcionais"])))
+
+    tipos = {c["id"]: c["tipo"] for c in g["obrigatorios"] + g["opcionais"]}
+    checar("lista com valores vira select", tipos["FOOTWEAR_TYPE"] == "lista")
+    checar("number_unit mantem a unidade", tipos["SHAFT_HEIGHT"] == "numero_unidade")
+    checar("string continua texto", tipos["BRAND"] == "texto")
+    unidade = [c for c in g["opcionais"] if c["id"] == "SHAFT_HEIGHT"][0]
+    checar("unidade padrao vem do ML", unidade["unidade_padrao"] == "cm")
+
+    # teto: categoria com 40 opcionais nao despeja 40 campos na tela
+    muitos = [{"id": "A%d" % i, "name": "Attr %d" % i, "value_type": "string",
+               "tags": {}, "relevance": i} for i in range(40)]
+    g2 = sc.organizar(muitos)
+    checar("opcionais tem teto", len(g2["opcionais"]) == sc.TETO_OPCIONAIS)
+    checar("tela diz quantos ficaram de fora",
+           g2["opcionais_de_fora"] == 40 - sc.TETO_OPCIONAIS)
+    checar("lista vazia nao quebra", sc.organizar([])["obrigatorios"] == [])
+    checar("lixo na lista e ignorado",
+           sc.organizar([None, {}, "x", {"id": "OK", "name": "Ok", "tags": {}}])
+           ["opcionais"][0]["id"] == "OK")
+
+    # montagem do que o formulario devolve
+    valores = sc.montar_valores(
+        ["BRAND", "SHAFT_HEIGHT", "MODEL", ""],
+        ["Nike", "40", "   ", "ignorado"],
+        ["", "cm", "", ""],
+    )
+    checar("valor com unidade e juntado",
+           valores.get("SHAFT_HEIGHT") == "40 cm", str(valores))
+    checar("campo em branco nao entra", "MODEL" not in valores)
+    checar("id em branco nao entra", len(valores) == 2, str(valores))
+    checar("listas de tamanhos diferentes nao estouram",
+           sc.montar_valores(["A", "B"], ["1"], []) == {"A": "1"})
+
+    ficha = {"obrigatorios": [{"id": "BRAND", "nome": "Marca"},
+                              {"id": "MODEL", "nome": "Modelo"}]}
+    checar("faltando aponta so o que esta vazio",
+           sc.faltando(ficha, {"BRAND": "Nike"}) == ["Modelo"])
+    checar("faltando com tudo preenchido e vazio",
+           sc.faltando(ficha, {"BRAND": "Nike", "MODEL": "Air"}) == [])
+    checar("sem categoria nao ha obrigatorio", sc.faltando({}, {}) == [])
+
+
+def ficha_do_produto(c: TestClient) -> None:
+    """Desenha a ficha de verdade, com banco e ML simulados.
+
+    E o unico teste que percorre rota + template + macro dos campos. Sem ele,
+    um erro no macro so apareceria com o Supabase ligado.
+    """
+    print("ficha do produto com categoria:")
+    import re
+
+    from app.servicos import categorias as sc
+    from app.servicos import contas as scontas
+    from app.servicos import produtos as sp
+
+    pid = "11111111-1111-1111-1111-111111111111"
+    produto = {
+        "id": pid, "sku": "AZERA", "titulo": "Tenis Azera Masculino",
+        "preco": 129.9, "estoque": 5, "ativo": True, "condicao": "novo",
+        "criado_em": "2026-01-02T10:00:00+00:00",
+        "ml_categoria_id": "MLB108746", "ml_categoria_nome": "Tenis",
+        "atributos": {"Garantia": "90 dias"},
+        "atributos_ml": {"BRAND": "Azera", "SHAFT_HEIGHT": "40 cm"},
+    }
+    ficha = dict(sc.organizar(ATRIBUTOS_ML))
+    ficha.update({"categoria_id": "MLB108746", "nome": "Tenis",
+                  "caminho": "Calcados > Tenis"})
+
+    async def nada(*a, **k):
+        return []
+
+    originais = (sp.buscar, sp.fotos, sp.anuncios, sp.variacoes,
+                 scontas.resumo, sc.ficha, sc.sugerir)
+    try:
+        sp.buscar = lambda *a, **k: _pronto(produto)
+        sp.fotos = nada
+        sp.anuncios = nada
+        sp.variacoes = nada
+        scontas.resumo = nada
+        sc.ficha = lambda *a, **k: _pronto(ficha)
+        sc.sugerir = lambda *a, **k: _pronto(
+            [{"categoria_id": "MLB108746", "nome": "Tenis", "dominio": "Tenis",
+              "adivinhados": {}}])
+
+        r = c.get("/produtos/" + pid)
+        checar("ficha abre", r.status_code == 200, "HTTP %s" % r.status_code)
+        checar("categoria aparece pelo caminho, nao pelo codigo cru",
+               "Calcados &gt; Tenis" in r.text or "Calcados > Tenis" in r.text)
+        checar("obrigatorio marcado na tela", "obrigat" in r.text and "Marca" in r.text)
+        checar("campo guardado volta preenchido", 'value="Azera"' in r.text)
+        checar("numero e unidade voltam separados",
+               'value="40"' in r.text and 'name="ml_atributo_unidade"' in r.text)
+        checar("campo obrigatorio em branco gera aviso",
+               "Modelo" in r.text and "sobe sem eles" in r.text)
+        checar("cor nao vira campo do produto", 'value="COLOR"' not in r.text)
+        checar("marcador de que os campos foram desenhados",
+               'name="ml_campos_na_tela"' in r.text)
+        checar("atributo livre continua existindo",
+               'name="atributo_chave"' in r.text and "Outros atributos" in r.text)
+
+        # as tres listas precisam sair com o mesmo tamanho, ou o servidor
+        # casaria o valor de um campo com o id de outro
+        n_id = len(re.findall('name="ml_atributo_id"', r.text))
+        n_val = len(re.findall('name="ml_atributo_valor"', r.text))
+        n_uni = len(re.findall('name="ml_atributo_unidade"', r.text))
+        checar("id, valor e unidade saem alinhados",
+               n_id == n_val == n_uni == 4, "%s/%s/%s" % (n_id, n_val, n_uni))
+
+        r = c.get("/produtos/" + pid + "?sugerir=1")
+        checar("sugestao aparece quando pedida",
+               "sugere estas categorias" in r.text, "HTTP %s" % r.status_code)
+
+        # ML fora do ar: a ficha continua abrindo e explica o que fazer
+        def explode(*a, **k):
+            raise sc.SemCanal("Conecte o Mercado Livre em Contas")
+
+        sc.ficha = explode
+        r = c.get("/produtos/" + pid)
+        checar("ML fora do ar nao derruba a ficha", r.status_code == 200,
+               "HTTP %s" % r.status_code)
+        checar("e a tela diz o que fazer", "Conecte o Mercado Livre" in r.text)
+        checar("sem campos desenhados, nada de marcador",
+               'name="ml_campos_na_tela"' not in r.text)
+    finally:
+        (sp.buscar, sp.fotos, sp.anuncios, sp.variacoes,
+         scontas.resumo, sc.ficha, sc.sugerir) = originais
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -882,6 +1071,8 @@ def main() -> int:
         etiquetas(c)
         catalogo(c)
         variacoes(c)
+        categorias_campos()
+        ficha_do_produto(c)
         botoes(c)
         responsivo(c)
         entrada(c)

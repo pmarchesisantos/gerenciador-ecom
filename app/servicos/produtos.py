@@ -106,14 +106,20 @@ async def mapa_sku_canal() -> dict[str, dict]:
 # escrita
 # ---------------------------------------------------------------------------
 def _numero(valor, campo: str, inteiro: bool = False):
-    texto = (valor or "").strip() if isinstance(valor, str) else valor
-    if texto in ("", None):
+    if valor in ("", None):
         return None
     try:
+        if not isinstance(valor, str):
+            # ja e numero (veio do banco): nao passa pela limpeza de pontuacao
+            return int(valor) if inteiro else Decimal(str(valor))
+        texto = valor.strip()
+        if not texto:
+            return None
         if inteiro:
-            return int(str(texto).replace(".", "").strip())
-        return Decimal(str(texto).replace(".", "").replace(",", "."))
-    except (InvalidOperation, ValueError):
+            return int(texto.replace(".", ""))
+        # formato brasileiro: 1.234,56 -> 1234.56
+        return Decimal(texto.replace(".", "").replace(",", "."))
+    except (InvalidOperation, ValueError, TypeError):
         raise ErroProduto(f"{campo} precisa ser um número.")
 
 
@@ -151,6 +157,10 @@ def _limpar(dados: dict) -> dict:
         "medidas_por_variacao": bool(dados.get("medidas_por_variacao")),
         "eixo1_nome": texto("eixo1_nome"),
         "eixo2_nome": texto("eixo2_nome"),
+        # categoria na plataforma: o id e o que vale na publicacao, o nome e
+        # so para a tela nao mostrar "MLB108746" para gente nenhuma
+        "ml_categoria_id": texto("ml_categoria_id"),
+        "ml_categoria_nome": texto("ml_categoria_nome"),
         # fiscais
         "ncm": texto("ncm"),
         "cest": texto("cest"),
@@ -180,8 +190,9 @@ async def criar(dados: dict, usuario: dict) -> dict:
     if await por_sku(campos["sku"]):
         raise ErroProduto(f"Já existe um produto com o SKU {campos['sku']}.")
     campos["criado_por"] = usuario.get("id")
-    if dados.get("atributos") is not None:
-        campos["atributos"] = dados["atributos"]
+    for campo in ("atributos", "atributos_ml"):
+        if dados.get(campo) is not None:
+            campos[campo] = dados[campo]
     novo = await db.inserir("produtos", campos)
     await db.registrar_evento(
         "produto", f"produto {campos['sku']} cadastrado", usuario=usuario
@@ -194,13 +205,39 @@ async def atualizar(produto_id: str, dados: dict, usuario: dict) -> dict:
     outro = await por_sku(campos["sku"])
     if outro and outro["id"] != produto_id:
         raise ErroProduto(f"O SKU {campos['sku']} já é de outro produto.")
-    if dados.get("atributos") is not None:
-        campos["atributos"] = dados["atributos"]
+    for campo in ("atributos", "atributos_ml"):
+        if dados.get(campo) is not None:
+            campos[campo] = dados[campo]
     atualizado = await db.atualizar("produtos", {"id": f"eq.{produto_id}"}, campos)
     await db.registrar_evento(
         "produto", f"produto {campos['sku']} alterado", usuario=usuario
     )
     return atualizado
+
+
+async def definir_categoria(
+    produto_id: str, categoria_id: str, categoria_nome: str, usuario: dict
+) -> None:
+    """Grava so a categoria escolhida.
+
+    De proposito nao passa por _limpar: a escolha vem de um clique, nao do
+    formulario inteiro, e revalidar preco e estoque aqui so criaria chance de
+    estragar o que ja estava salvo.
+    """
+    cid = (categoria_id or "").strip()
+    if not cid:
+        raise ErroProduto("Escolha uma categoria.")
+    await db.atualizar(
+        "produtos",
+        {"id": f"eq.{produto_id}"},
+        {
+            "ml_categoria_id": cid,
+            "ml_categoria_nome": (categoria_nome or "").strip() or None,
+        },
+    )
+    await db.registrar_evento(
+        "produto", f"categoria definida como {categoria_nome or cid}", usuario=usuario
+    )
 
 
 async def remover(produto_id: str, usuario: dict) -> None:

@@ -271,6 +271,67 @@ class MercadoLivre(CanalBase):
         return "O Mercado Livre recusou " + str(len(falhas)) + " envio(s). " + "; ".join(linhas)
 
     # ------------------------------------------------------------------
+    # categoria e campos do anuncio
+    #
+    # Duas chamadas de leitura que o ML oferece sem custo nenhum e que
+    # resolvem a pergunta "quais campos este anuncio pede": ele preve a
+    # categoria a partir do titulo e, dada a categoria, lista os atributos
+    # com os obrigatorios marcados. E a fonte da verdade - a lista varia por
+    # categoria e muda sem avisar, entao nao da para chumbar no codigo.
+    # ------------------------------------------------------------------
+    async def sugerir_categoria(self, conta: dict, titulo: str) -> list[dict]:
+        """Categorias que o ML acha que combinam com este titulo, em ordem."""
+        texto = (titulo or "").strip()
+        if len(texto) < 3:
+            raise ErroCanal("Escreva o titulo do produto antes de pedir a sugestao.")
+
+        j = await self._get(
+            conta,
+            "/sites/MLB/domain_discovery/search",
+            {"q": texto[:200], "limit": 8},
+        )
+        if not isinstance(j, list):
+            return []
+
+        saida = []
+        for item in j:
+            cid = item.get("category_id")
+            if not cid:
+                continue
+            saida.append(
+                {
+                    "categoria_id": cid,
+                    "nome": item.get("category_name") or cid,
+                    "dominio": item.get("domain_name") or "",
+                    # o ML ja devolve o que conseguiu adivinhar do titulo
+                    "adivinhados": {
+                        a.get("id"): a.get("value_name")
+                        for a in (item.get("attributes") or [])
+                        if a.get("id") and a.get("value_name")
+                    },
+                }
+            )
+        return saida
+
+    async def atributos_categoria(self, conta: dict, categoria_id: str) -> dict:
+        """Nome, caminho e lista de atributos de uma categoria."""
+        cid = (categoria_id or "").strip()
+        if not cid:
+            raise ErroCanal("Informe a categoria.")
+
+        categoria = await self._get(conta, f"/categories/{cid}")
+        atributos = await self._get(conta, f"/categories/{cid}/attributes")
+        caminho = " > ".join(
+            p.get("name", "") for p in (categoria.get("path_from_root") or [])
+        )
+        return {
+            "categoria_id": cid,
+            "nome": categoria.get("name") or cid,
+            "caminho": caminho or categoria.get("name") or cid,
+            "atributos": atributos if isinstance(atributos, list) else [],
+        }
+
+    # ------------------------------------------------------------------
     # leitura
     # ------------------------------------------------------------------
     async def _get(self, conta: dict, caminho: str, params: dict | None = None) -> dict:

@@ -323,3 +323,15 @@ alter table public.produto_anuncios
 
 alter table public.produto_variacoes enable row level security;
 grant all privileges on public.produto_variacoes to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Categoria na plataforma e os campos que ela exige.
+--
+-- Guardamos o resultado, nunca a lista de campos: quais atributos uma
+-- categoria pede e a propria plataforma quem diz, e isso muda sem aviso.
+-- `atributos_ml` vai chaveado pelo ID do atributo no Mercado Livre
+-- (BRAND, MATERIAL, ...), que e exatamente o que a publicacao vai mandar.
+-- ---------------------------------------------------------------------------
+alter table public.produtos add column if not exists ml_categoria_id   text;
+alter table public.produtos add column if not exists ml_categoria_nome text;
+alter table public.produtos add column if not exists atributos_ml      jsonb not null default '{}'::jsonb;
