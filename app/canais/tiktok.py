@@ -97,8 +97,9 @@ class TikTokShop(CanalBase):
     gera_etiqueta = True
     despacha_ao_imprimir = True
     motivo_sem_etiqueta = (
-        "No TikTok a etiqueta só existe depois de o envio ser arranjado. "
-        "O botão daqui faz as duas coisas: despacha e imprime."
+        "No TikTok a etiqueta só é gerada quando a plataforma é avisada de que o "
+        "pacote está pronto para sair. O botão daqui faz as duas coisas: avisa e "
+        "imprime. A coleta em si continua sendo quando o ponto bipa o pacote."
     )
 
     # ------------------------------------------------------------------

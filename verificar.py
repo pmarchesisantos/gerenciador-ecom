@@ -617,14 +617,16 @@ def etiquetas(c: TestClient) -> None:
     checar("caixa diz se o canal despacha ao imprimir",
            'data-despacha="1"' in r.text)
     checar("confirma antes de despachar",
-           "avisar o comprador. Continuar?" in r.text)
+           "realmente levar ao ponto de coleta" in r.text)
 
     print("por que o canal nao imprime:")
     from app.canais import CANAIS
     for nome in ("tiktok", "shopee"):
         checar(f"{nome} explica o motivo", bool(CANAIS[nome].motivo_sem_etiqueta))
     checar("TikTok avisa que imprimir tambem despacha",
-           "despacha e imprime" in CANAIS["tiktok"].motivo_sem_etiqueta)
+           "avisa e imprime" in CANAIS["tiktok"].motivo_sem_etiqueta)
+    checar("TikTok separa o aviso da coleta fisica",
+           "ponto bipa" in CANAIS["tiktok"].motivo_sem_etiqueta)
 
     r = c.get("/pedidos?exemplo=1&envio=a_enviar")
     checar("tela avisa sobre quem nao imprime",

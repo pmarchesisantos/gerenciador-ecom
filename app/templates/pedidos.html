@@ -139,7 +139,7 @@
       </button>
     </div>
     <div class="faixa atencao" id="aviso-despacho" style="display:none; margin:0 0 14px">
-      <strong>Esta impressão também despacha os pedidos</strong>
+      <strong>Esta impressão também marca os pedidos como prontos para sair</strong>
       <span id="texto-despacho"></span>
     </div>
   {% endif %}
@@ -289,11 +289,13 @@
         aviso.style.display = despachaAgora ? '' : 'none';
         if (despachaAgora) {
           var nomes = Array.from(canaisQueDespacham).join(', ');
-          textoAviso.textContent = ' No ' + nomes + ' a etiqueta só existe depois do '
-            + 'envio ser arranjado. Ao imprimir, ' + sel.length
-            + (sel.length === 1
-                ? ' pedido será marcado como despachado e o comprador será avisado.'
-                : ' pedidos serão marcados como despachados e os compradores serão avisados.');
+          textoAviso.textContent = ' No ' + nomes + ' a etiqueta só é gerada quando '
+            + 'a plataforma é avisada de que o pacote está pronto para sair. Ao '
+            + 'imprimir, ' + sel.length
+            + (sel.length === 1 ? ' pedido sai' : ' pedidos saem')
+            + ' da fila de "aguardando despacho" lá — a plataforma costuma avisar '
+            + 'o comprador nesse momento. A coleta em si continua sendo quando o '
+            + 'ponto bipa o pacote.';
         }
       }
       botao.textContent = despachaAgora ? 'Despachar e imprimir' : 'Imprimir etiquetas';
@@ -307,8 +309,9 @@
       if (!despachaAgora) return;
       var n = form.querySelectorAll('.marca-etiqueta:checked').length;
       var ok = confirm(
-        'Isto vai despachar ' + n + (n === 1 ? ' pedido' : ' pedidos') +
-        ' na plataforma e avisar o comprador. Continuar?'
+        'Isto avisa a plataforma que ' + n + (n === 1 ? ' pacote está pronto' : ' pacotes estão prontos') +
+        ' para sair, e normalmente notifica o comprador. Faça só quando for ' +
+        'realmente levar ao ponto de coleta. Continuar?'
       );
       if (!ok) ev.preventDefault();
     });
