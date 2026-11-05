@@ -325,7 +325,45 @@ async def mapa_sku() -> dict[str, dict]:
     return saida
 
 
-async def conciliar(pedidos: list, usuario: dict | None = None) -> dict:
+async def projetar(pedidos: list, catalogo: dict | None = None) -> dict:
+    """Por pedido, o que fica no limite se ele for despachado agora.
+
+    Serve ao aviso da hora de imprimir a etiqueta: nao adianta dizer "acabou"
+    depois que o par ja saiu daqui. O pedido que vai sair ainda nao descontou -
+    ele esta em "a enviar" - entao a projecao e o saldo de hoje menos o que vai
+    no pacote.
+    """
+    if catalogo is None:
+        catalogo = await mapa_sku()
+    if not catalogo:
+        return {}
+
+    saida: dict[str, list[dict]] = {}
+    for pedido in pedidos:
+        avisos = []
+        for item in pedido.itens:
+            linha = catalogo.get((item.sku or "").strip())
+            if not linha or not linha["controla"]:
+                continue
+            resta = linha["estoque"] - int(item.quantidade or 0)
+            if resta > linha["minimo"]:
+                continue
+            avisos.append(
+                {
+                    "sku": linha["sku"],
+                    "resta": max(resta, 0),
+                    "minimo": linha["minimo"],
+                    "negativo": resta < 0,
+                }
+            )
+        if avisos:
+            saida[pedido.pedido_id] = avisos
+    return saida
+
+
+async def conciliar(
+    pedidos: list, usuario: dict | None = None, catalogo: dict | None = None
+) -> dict:
     """Desconta os envios já despachados que ainda não constam no livro.
 
     Idempotente por construção: o par (canal, pedido, sku) é único no banco
@@ -340,7 +378,8 @@ async def conciliar(pedidos: list, usuario: dict | None = None) -> dict:
     if not despachados:
         return resultado
 
-    catalogo = await mapa_sku()
+    if catalogo is None:
+        catalogo = await mapa_sku()
     if not catalogo:
         return resultado
 

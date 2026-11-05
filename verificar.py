@@ -1333,9 +1333,14 @@ def tela_estoque(c: TestClient) -> None:
                'value="envio"' not in r.text)
         checar("totais na tela", "Unidades em casa" in r.text)
 
+        # o aviso NAO fica fixo nas telas: o lugar dele e a hora de imprimir
         r = c.get("/produtos")
-        checar("aviso tambem na tela de produtos",
-               "AZERA-PRETO-39" in r.text, "HTTP %s" % r.status_code)
+        checar("tela de produtos sem faixa fixa de estoque",
+               "alerta-estoque" not in r.text, "HTTP %s" % r.status_code)
+        r = c.get("/pedidos?exemplo=1")
+        checar("tela de pedidos sem faixa fixa de estoque",
+               'id="aviso-reposicao"' not in r.text
+               or 'style="display:none' in r.text)
 
         logar(c, "leitor")
         r = c.get("/estoque")

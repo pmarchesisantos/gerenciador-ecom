@@ -237,14 +237,6 @@ async def _mapa_sku() -> dict:
         return {}
 
 
-async def _alertas_estoque() -> list[dict]:
-    """O que precisa de reposicao. Falha em silencio: o aviso e um extra."""
-    try:
-        return servico_estoque.alertas(await servico_estoque.posicao())
-    except Exception:
-        return []
-
-
 def _graficos(resumo: dict) -> dict:
     """Dados que vao para os graficos, ja com as cores resolvidas no servidor.
 
@@ -627,12 +619,18 @@ async def pedidos(
     # Baixa automatica: os pedidos ja despachados que ainda nao estao no livro
     # saem do estoque agora. E idempotente - dar F5 nao desconta de novo - e
     # falhar aqui nunca pode tirar a tela de pedidos do ar.
-    baixa = {}
+    baixa, projecao = {}, {}
     if not exemplo:
         try:
-            baixa = await servico_estoque.conciliar(dados["pedidos"], usuario)
+            catalogo = await servico_estoque.mapa_sku()
+            baixa = await servico_estoque.conciliar(
+                dados["pedidos"], usuario, catalogo
+            )
+            # o que fica no limite se o pedido sair agora - vira aviso na hora
+            # de imprimir a etiqueta, que e quando da para fazer algo a respeito
+            projecao = await servico_estoque.projetar(lista, catalogo)
         except Exception:
-            baixa = {}
+            baixa, projecao = {}, {}
 
     return templates.TemplateResponse(
         "pedidos.html",
@@ -646,7 +644,7 @@ async def pedidos(
             dados=dados,
             filtro={"canal": canal, "grupo": grupo, "q": q, "envio": envio},
             baixa=baixa,
-            alertas_estoque=[] if exemplo else await _alertas_estoque(),
+            projecao_estoque=projecao,
             exemplo=bool(exemplo),
             erro_infra=erro_infra,
         ),
@@ -750,7 +748,6 @@ async def produtos_lista(request: Request, q: str = ""):
             vinculos=vinculos,
             variacoes=variacoes,
             busca=q,
-            alertas_estoque=await _alertas_estoque(),
             erro_infra=erro_infra,
         ),
     )

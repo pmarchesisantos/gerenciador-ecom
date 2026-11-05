@@ -12,8 +12,6 @@
   {% if tem_filtro %}(com filtro aplicado){% endif %}.
 </p>
 
-{% include "_alerta_estoque.html" %}
-
 {# ---- fila de trabalho: o que falta despachar ------------------------- #}
 {% set a_enviar = contagem_envio.get('a_enviar', 0) %}
 {% if a_enviar %}
@@ -144,6 +142,16 @@
       <strong>Esta impressão também marca os pedidos como prontos para sair</strong>
       <span id="texto-despacho"></span>
     </div>
+    {# Reposição: o lugar do aviso é aqui, na hora de imprimir, e não como
+       faixa fixa no alto da tela. Aqui ele é acionável - você ainda está
+       com o pacote na mão e sabe que aquele par era o último. #}
+    <div class="faixa atencao alerta-estoque" id="aviso-reposicao"
+         style="display:none; margin:0 0 14px">
+      <strong id="titulo-reposicao"></strong>
+      <span>Depois de despachar o que está marcado, estes ficam no limite:</span>
+      <ul class="lista-reposicao" id="lista-reposicao"></ul>
+      <p><a href="/estoque">Abrir o estoque para repor</a>.</p>
+    </div>
   {% endif %}
 
   <div class="rolagem" data-rolagem-lateral>
@@ -163,7 +171,8 @@
                 <input type="checkbox" name="pedido_id" value="{{ p.pedido_id }}"
                        class="marca-etiqueta" data-conta="{{ p.canal }}|{{ p.conta }}"
                        data-canal="{{ p.canal_rotulo }}"
-                       data-despacha="{{ '1' if p.exige_despacho else '' }}">
+                       data-despacha="{{ '1' if p.exige_despacho else '' }}"
+                       data-estoque="{{ projecao_estoque.get(p.pedido_id, [])|tojson|forceescape }}">
               {% endif %}
             </td>
           {% endif %}
@@ -300,6 +309,49 @@
             + 'ponto bipa o pacote.';
         }
       }
+      // reposicao: junta a projecao dos pedidos marcados, pior caso por SKU
+      var porSku = {};
+      sel.forEach(function (m) {
+        var crus = [];
+        try { crus = JSON.parse(m.dataset.estoque || '[]'); } catch (e) { crus = []; }
+        crus.forEach(function (i) {
+          if (!(i.sku in porSku) || i.resta < porSku[i.sku].resta) porSku[i.sku] = i;
+        });
+      });
+      var faltas = Object.keys(porSku).map(function (k) { return porSku[k]; })
+        .sort(function (a, b) { return a.resta - b.resta; });
+
+      var caixa = document.getElementById('aviso-reposicao');
+      if (caixa) {
+        caixa.style.display = faltas.length ? '' : 'none';
+        if (faltas.length) {
+          document.getElementById('titulo-reposicao').textContent =
+            faltas.length + (faltas.length === 1
+              ? ' item precisa de reposição'
+              : ' itens precisam de reposição');
+          var ul = document.getElementById('lista-reposicao');
+          ul.textContent = '';
+          faltas.slice(0, 12).forEach(function (i) {
+            var li = document.createElement('li');
+            var cod = document.createElement('span');
+            cod.className = 'cru';
+            cod.textContent = i.sku;
+            li.appendChild(cod);
+            var txt = document.createElement('b');
+            txt.textContent = i.negativo
+              ? '— falta no estoque'
+              : (i.resta === 0 ? '— zera' : '— ficam ' + i.resta);
+            li.appendChild(txt);
+            ul.appendChild(li);
+          });
+          if (faltas.length > 12) {
+            var li = document.createElement('li');
+            li.textContent = '+' + (faltas.length - 12);
+            ul.appendChild(li);
+          }
+        }
+      }
+
       botao.textContent = despachaAgora ? 'Despachar e imprimir' : 'Imprimir etiquetas';
       if (todos) {
         todos.checked = sel.length === marcas.length && marcas.length > 0;

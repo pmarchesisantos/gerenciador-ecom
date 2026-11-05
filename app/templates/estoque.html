@@ -13,30 +13,32 @@
 {% include "_alerta_estoque.html" %}
 
 {# ------------------------------------------------------------- indicadores #}
-<div class="rolagem" data-rolagem-lateral>
-  <div class="tiles-soltas">
-    <div class="tile neutro">
-      <div class="rotulo">Itens controlados</div>
-      <div class="valor">{{ resumo_estoque.itens|inteiro }}</div>
-      <div class="apoio">cada cor e tamanho conta como um item</div>
-    </div>
-    <div class="tile acento">
-      <div class="rotulo">Unidades em casa</div>
-      <div class="valor">{{ resumo_estoque.pares|inteiro }}</div>
-      <div class="apoio">soma de tudo o que o sistema acha que voc&ecirc; tem</div>
-    </div>
-    <div class="tile warning">
-      <div class="rotulo">Acabando</div>
-      <div class="valor">{{ resumo_estoque.acabando|inteiro }}</div>
-      <div class="apoio">chegaram no m&iacute;nimo &mdash; hora de repor</div>
-    </div>
-    <div class="tile critical">
-      <div class="rotulo">Zerados</div>
-      <div class="valor">{{ resumo_estoque.zerados|inteiro }}</div>
-      <div class="apoio">se vender, n&atilde;o tem o que despachar</div>
-    </div>
+{# Sem nada para controlar, quatro zeros nao informam nada - so empurram para
+   baixo a unica coisa util da tela, que e explicar o que fazer. #}
+{% if linhas %}
+<div class="tiles-soltas" data-rolagem-lateral>
+  <div class="tile neutro">
+    <div class="rotulo">Itens controlados</div>
+    <div class="valor">{{ resumo_estoque.itens|inteiro }}</div>
+    <div class="apoio">cada cor e tamanho conta como um item</div>
+  </div>
+  <div class="tile acento">
+    <div class="rotulo">Unidades em casa</div>
+    <div class="valor">{{ resumo_estoque.pares|inteiro }}</div>
+    <div class="apoio">soma de tudo o que o sistema acha que você tem</div>
+  </div>
+  <div class="tile warning">
+    <div class="rotulo">Acabando</div>
+    <div class="valor">{{ resumo_estoque.acabando|inteiro }}</div>
+    <div class="apoio">chegaram no mínimo &mdash; hora de repor</div>
+  </div>
+  <div class="tile critical">
+    <div class="rotulo">Zerados</div>
+    <div class="valor">{{ resumo_estoque.zerados|inteiro }}</div>
+    <div class="apoio">se vender, não tem o que despachar</div>
   </div>
 </div>
+{% endif %}
 
 {# ------------------------------------------------------------- movimentação #}
 {% if pode_editar and linhas %}
@@ -104,8 +106,8 @@
     {% if busca %}<a class="botao neutro" href="/estoque">Limpar</a>{% endif %}
   </form>
 
-  <div class="rolagem">
-    <table>
+  <div class="rolagem" data-rolagem-lateral>
+    <table class="grade-estoque">
       <thead><tr>
         <th>SKU</th><th>Produto</th><th>Variação</th>
         <th class="num">Tem</th><th class="num">Mínimo</th><th>Situação</th><th></th>
@@ -167,8 +169,8 @@
       {% endif %}
     </p>
   </div>
-  <div class="rolagem">
-    <table>
+  <div class="rolagem" data-rolagem-lateral>
+    <table class="grade-livro">
       <thead><tr>
         <th>Quando</th><th>SKU</th><th>Produto</th><th>Motivo</th>
         <th class="num">Mudança</th><th class="num">Ficou</th><th>Origem</th>
