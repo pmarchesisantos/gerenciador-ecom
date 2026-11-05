@@ -115,6 +115,13 @@ class ItemPedido:
     titulo: str
     quantidade: int
     valor_unitario: Decimal = Decimal("0")
+    # Id da variacao NA PLATAFORMA (variation_id no ML, sku_id no TikTok,
+    # model_id na Shopee). O SKU e o codigo do lojista e e o que une o mesmo
+    # tenis nos tres canais - por isso ele manda. Mas quem nao preencheu SKU
+    # no anuncio recebe o codigo do anuncio no lugar, que e igual para todas
+    # as numeracoes e nao diz qual par saiu. Este campo diz, e continua
+    # valendo mesmo que o lojista mude o SKU depois.
+    sku_variacao: str = ""
 
     @property
     def valor_total(self) -> Decimal:

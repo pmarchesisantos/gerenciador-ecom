@@ -753,6 +753,27 @@ async def produtos_lista(request: Request, q: str = ""):
     )
 
 
+@app.post("/produtos/remover-lote")
+async def produtos_remover_lote(request: Request):
+    """Apaga os produtos marcados na lista. Variacoes, fotos e vinculos vao junto."""
+    usuario = auth.usuario_da_sessao(request)
+    form = await request.form()
+    volta = "/produtos"
+    if form.get("q"):
+        volta = f"/produtos?q={_url(form.get('q'))}"
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        r = await servico_produtos.remover_varios(form.getlist("produto_id"), usuario)
+    except (auth.SemPermissao, servico_produtos.ErroProduto, db.ErroBanco) as e:
+        return _volta(volta, erro=str(e))
+
+    servico_consulta.limpar_cache()
+    aviso = f"{r['apagados']} produto(s) removido(s)."
+    if r["problemas"]:
+        aviso += f" {len(r['problemas'])} não saíram: {r['problemas'][0]}"
+    return _volta(volta, aviso=aviso)
+
+
 @app.get("/produtos/importar", response_class=HTMLResponse)
 async def produtos_importar_previa(request: Request, conta_id: str = ""):
     """Mostra o que a importacao faria, anuncio por anuncio. Nada e gravado."""
@@ -786,6 +807,29 @@ async def produtos_importar_previa(request: Request, conta_id: str = ""):
             ja_importado=servico_importacao.JA_IMPORTADO,
             erro_infra=erro_infra,
         ),
+    )
+
+
+@app.post("/produtos/importar/sincronizar")
+async def produtos_sincronizar(request: Request, conta_id: str = Form(...)):
+    """Completa o id da variacao nos produtos ja importados. Nao cria nada."""
+    usuario = auth.usuario_da_sessao(request)
+    volta = f"/produtos/importar?conta_id={conta_id}"
+    try:
+        auth.exigir(usuario, auth.OPERADOR)
+        r = await servico_importacao.sincronizar(conta_id, usuario)
+    except (auth.SemPermissao, servico_importacao.ErroImportacao, ErroCanal,
+            db.ErroBanco) as e:
+        return _volta(volta, erro=str(e))
+
+    if not r["completadas"]:
+        return _volta(volta, aviso="Nada a completar: a grade já está ligada à "
+                                   "plataforma.")
+    return _volta(
+        volta,
+        aviso=f"{r['completadas']} variação(ões) de {r['produtos']} produto(s) "
+        "agora sabem qual par saiu em cada pedido. A baixa de estoque passa a "
+        "funcionar para elas.",
     )
 
 

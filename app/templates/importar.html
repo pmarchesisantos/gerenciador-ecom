@@ -64,6 +64,42 @@
       </p>
     </div>
 
+    {% if previa.sem_sku %}
+      <div class="faixa atencao" style="margin:0 0 16px">
+        <strong>{{ previa.sem_sku }} anúncio(s) sem SKU próprio</strong>
+        A plataforma não tem um código seu para eles, então o sistema usa o
+        código do anúncio. <b>O estoque funciona</b> &mdash; a grade guarda o id da
+        variação e o pedido diz qual par saiu. O que não acontece é a
+        unificação: o mesmo tênis na Shopee entrará como outro produto, porque
+        não há código em comum. Dá para preencher o SKU depois, aqui ou no
+        anúncio.
+        <p>
+          <label class="marca-caixa" style="font-size:13px">
+            <input type="checkbox" id="pular-sem-sku">
+            Deixar os sem SKU de fora desta importação
+          </label>
+        </p>
+      </div>
+    {% endif %}
+
+    {% if previa.ja_importados %}
+      <div class="faixa info" style="margin:0 0 16px">
+        <strong>{{ previa.ja_importados }} anúncio(s) já importados</strong>
+        Se eles vieram antes de o sistema guardar o id da variação, o pedido
+        não consegue dizer qual numeração saiu e o estoque deles não baixa.
+        Completar não cria nem sobrescreve nada &mdash; só preenche o que está
+        vazio.
+        <p>
+          <button class="botao contorno pequeno" type="submit"
+                  form="form-sincronizar">Completar a grade dos já importados</button>
+        </p>
+      </div>
+      <form method="post" action="/produtos/importar/sincronizar"
+            id="form-sincronizar" hidden>
+        <input type="hidden" name="conta_id" value="{{ conta_id }}">
+      </form>
+    {% endif %}
+
     {% if pendentes %}
       <form method="post" action="/produtos/importar">
         <input type="hidden" name="conta_id" value="{{ conta_id }}">
@@ -85,10 +121,18 @@
                 <td>
                   {% if i.situacao != ja_importado %}
                     <input type="checkbox" name="anuncio_id" value="{{ i.anuncio_id }}"
-                           class="marca-anuncio" checked>
+                           class="marca-anuncio" checked
+                           data-sem-sku="{{ '1' if i.sem_sku else '' }}">
                   {% endif %}
                 </td>
-                <td class="cru">{{ i.sku }}</td>
+                <td class="cru">
+                  {{ i.sku }}
+                  {% if i.sem_sku %}
+                    <br><span class="selo amarelo"
+                              title="O anúncio não tem código seu; este é o código do anúncio.">
+                      sem SKU próprio</span>
+                  {% endif %}
+                </td>
                 <td>
                   {% if i.url %}
                     <a href="{{ i.url }}" target="_blank" rel="noopener">{{ i.titulo }}</a>
@@ -160,9 +204,26 @@
       if (conta) conta.textContent = n;
     }
     todos.addEventListener('change', function () {
-      marcas.forEach(function (m) { m.checked = todos.checked; });
+      marcas.forEach(function (m) {
+        if (m.disabled) return;
+        m.checked = todos.checked;
+      });
       recontar();
     });
+
+    var pular = document.getElementById('pular-sem-sku');
+    if (pular) {
+      pular.addEventListener('change', function () {
+        marcas.forEach(function (m) {
+          if (!m.dataset.semSku) return;
+          m.disabled = pular.checked;
+          m.checked = !pular.checked;
+          var linha = m.closest('tr');
+          if (linha) linha.classList.toggle('linha-apagada', pular.checked);
+        });
+        recontar();
+      });
+    }
     marcas.forEach(function (m) { m.addEventListener('change', recontar); });
     recontar();
   })();

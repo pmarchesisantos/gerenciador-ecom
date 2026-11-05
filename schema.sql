@@ -379,3 +379,19 @@ create index if not exists estoque_mov_produto_idx
 
 alter table public.estoque_movimentos enable row level security;
 grant all privileges on public.estoque_movimentos to service_role;
+
+-- ---------------------------------------------------------------------------
+-- Id da variacao na plataforma.
+--
+-- Quem nao preencheu SKU no anuncio recebe o codigo do ANUNCIO nos pedidos,
+-- que e o mesmo para todas as numeracoes e nao diz qual par saiu. Este id diz.
+-- O SKU continua mandando quando existe - ele e o codigo do lojista e e o que
+-- une o mesmo produto nos tres canais; este aqui e a rede de seguranca, e
+-- segue valendo mesmo que o SKU do anuncio mude depois.
+-- ---------------------------------------------------------------------------
+alter table public.produto_variacoes
+    add column if not exists anuncio_variacao_id text;
+
+create index if not exists produto_variacoes_anuncio_idx
+    on public.produto_variacoes (anuncio_variacao_id)
+    where anuncio_variacao_id is not null;

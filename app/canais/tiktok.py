@@ -448,6 +448,7 @@ class TikTokShop(CanalBase):
                     titulo=it.get("product_name", "-"),
                     quantidade=qtd,
                     valor_unitario=dec(it.get("sale_price")),
+                    sku_variacao=str(it.get("sku_id") or ""),
                 )
         itens = list(por_sku.values())
 

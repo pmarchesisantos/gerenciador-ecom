@@ -98,6 +98,10 @@ async def previa(conta_id: str, usuario: dict | None = None) -> dict:
 
     itens = []
     for a in anuncios:
+        # sem SKU no anuncio, o codigo do anuncio serve de muleta: o produto
+        # entra e o estoque funciona (pelo id da variacao), mas ele nao se
+        # une ao mesmo tenis das outras plataformas ate ganhar SKU de verdade
+        sem_sku = not a["sku"]
         sku = a["sku"] or a["anuncio_id"]
         if a["anuncio_id"] in ja_vinculados:
             situacao, existente = JA_IMPORTADO, None
@@ -109,6 +113,7 @@ async def previa(conta_id: str, usuario: dict | None = None) -> dict:
             {
                 **a,
                 "sku": sku,
+                "sem_sku": sem_sku,
                 "situacao": situacao,
                 "produto_existente": (existente or {}).get("id"),
                 "produto_existente_titulo": (existente or {}).get("titulo"),
@@ -123,6 +128,9 @@ async def previa(conta_id: str, usuario: dict | None = None) -> dict:
         "novos": sum(1 for i in itens if i["situacao"] == NOVO),
         "vincula": sum(1 for i in itens if i["situacao"] == VINCULA),
         "ja_importados": sum(1 for i in itens if i["situacao"] == JA_IMPORTADO),
+        "sem_sku": sum(
+            1 for i in itens if i["sem_sku"] and i["situacao"] != JA_IMPORTADO
+        ),
     }
 
 
@@ -173,6 +181,8 @@ async def _criar_variacoes(produto: dict, item: dict) -> int:
             {
                 "produto_id": produto["id"],
                 "sku": sku,
+                # sem isto, pedido de anuncio sem SKU nao diz qual par saiu
+                "anuncio_variacao_id": v.get("anuncio_variacao_id") or None,
                 "eixo1_valor": v1,
                 "eixo2_valor": v2,
                 "preco": v.get("preco"),
@@ -204,6 +214,88 @@ async def _criar_fotos(produto: dict, item: dict) -> int:
         for i, url in enumerate(urls)
     ]
     return len(await db.inserir_varios("produto_fotos", linhas))
+
+
+async def sincronizar(conta_id: str, usuario: dict) -> dict:
+    """Completa o que falta nos produtos JA importados, sem criar nada.
+
+    Existe por um motivo concreto: quem importou antes de o sistema guardar o
+    id da variação ficou com uma grade que o pedido não consegue apontar. Sem
+    este reparo a correção só valeria para importação nova, e o catálogo que
+    já está aqui continuaria sem baixa de estoque.
+
+    Casa a variação da plataforma com a nossa pelos valores dos eixos (Preto /
+    39) e, como alternativa, pelo SKU. Só preenche o que está vazio — nunca
+    sobrescreve o que você ajustou à mão.
+    """
+    linha = await _conta_pronta(conta_id, usuario)
+    conta = await servico_contas.garantir_token(linha)
+    anuncios = await canal(linha["canal"]).listar_anuncios(conta, TETO)
+
+    vinculos = {
+        v["anuncio_id"]: v["produto_id"]
+        for v in await db.selecionar(
+            "produto_anuncios", {"conta_id": f"eq.{conta_id}"}
+        )
+        if v.get("anuncio_id") and v.get("produto_id")
+    }
+    if not vinculos:
+        raise ErroImportacao(
+            "Nenhum anúncio desta loja está vinculado ainda. Use a importação "
+            "primeiro."
+        )
+
+    por_produto: dict[str, list[dict]] = {}
+    for v in await db.selecionar("produto_variacoes"):
+        por_produto.setdefault(v["produto_id"], []).append(v)
+
+    completadas, produtos_tocados = 0, set()
+    for a in anuncios:
+        produto_id = vinculos.get(a["anuncio_id"])
+        if not produto_id:
+            continue
+        nossas = por_produto.get(produto_id) or []
+        if not nossas:
+            continue
+
+        eixos = a.get("eixos") or []
+        por_valores = {
+            (str(v.get("eixo1_valor") or ""), str(v.get("eixo2_valor") or "")): v
+            for v in nossas
+        }
+        por_sku = {str(v.get("sku") or ""): v for v in nossas}
+
+        for v in a.get("variacoes") or []:
+            id_plataforma = v.get("anuncio_variacao_id")
+            if not id_plataforma:
+                continue
+            valores = v.get("valores") or {}
+            chave = (
+                str(_eixo(valores, eixos, 0) or ""),
+                str(_eixo(valores, eixos, 1) or ""),
+            )
+            nossa = por_valores.get(chave) or por_sku.get(v.get("sku") or "")
+            if not nossa or nossa.get("anuncio_variacao_id"):
+                continue
+            await db.atualizar(
+                "produto_variacoes",
+                {"id": f"eq.{nossa['id']}"},
+                {"anuncio_variacao_id": id_plataforma},
+            )
+            nossa["anuncio_variacao_id"] = id_plataforma
+            completadas += 1
+            produtos_tocados.add(produto_id)
+
+    if completadas:
+        await db.registrar_evento(
+            "produto",
+            f"sincronização: {completadas} variação(ões) ganharam o id da "
+            f"plataforma em {len(produtos_tocados)} produto(s)",
+            conta_id,
+            linha.get("canal"),
+            usuario,
+        )
+    return {"completadas": completadas, "produtos": len(produtos_tocados)}
 
 
 async def importar(

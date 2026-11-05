@@ -24,11 +24,29 @@
 </div>
 
 {% if lista %}
+{% set pode_editar = pode('operador') %}
 <div class="cartao">
-  <div class="rolagem">
-    <table>
+  <form method="post" action="/produtos/remover-lote" id="form-produtos">
+  <input type="hidden" name="q" value="{{ busca }}">
+
+  {% if pode_editar %}
+    <div class="barra-acao" id="barra-produtos">
+      <label class="escolher-todos">
+        <input type="checkbox" id="marcar-todos-produtos">
+        Selecionar os {{ lista|length }} da lista
+      </label>
+      <span class="contagem" id="contagem-produtos">nenhum selecionado</span>
+      <button class="botao perigo" type="submit" id="botao-remover" disabled>
+        Remover selecionados
+      </button>
+    </div>
+  {% endif %}
+
+  <div class="rolagem" data-rolagem-lateral>
+    <table class="grade-produtos">
       <thead><tr>
-        <th>SKU</th><th>Produto</th><th>Marca</th>
+        {% if pode_editar %}<th style="width:34px"></th>{% endif %}
+        <th>SKU</th><th class="col-titulo">Produto</th><th>Marca</th>
         <th class="num">Preço</th><th class="num">Estoque</th>
         <th class="num">Variações</th><th class="num">Fotos</th>
         <th class="num">Anúncios</th><th>Situação</th>
@@ -36,8 +54,14 @@
       <tbody>
       {% for p in lista %}
         <tr>
+          {% if pode_editar %}
+            <td>
+              <input type="checkbox" name="produto_id" value="{{ p.id }}"
+                     class="marca-produto" data-titulo="{{ p.titulo }}">
+            </td>
+          {% endif %}
           <td class="cru">{{ p.sku }}</td>
-          <td><a href="/produtos/{{ p.id }}">{{ p.titulo }}</a></td>
+          <td class="col-titulo"><a href="/produtos/{{ p.id }}">{{ p.titulo }}</a></td>
           <td>{{ p.marca or '-' }}</td>
           <td class="num">{{ p.preco|moeda if p.preco else '-' }}</td>
           <td class="num">{{ p.estoque|inteiro }}</td>
@@ -63,12 +87,18 @@
       </tbody>
     </table>
   </div>
+  </form>
   <p class="sub" style="margin:14px 0 0">
     <b>Variações</b> é quantas combinações de cor e tamanho o produto tem;
     "única" significa que ele é vendido numa versão só.
     <b>Anúncios</b> é quantas plataformas já conhecem este produto. Enquanto um
     produto estiver <b>solto</b>, as vendas dele continuam aparecendo separadas
     por canal no painel.
+    {% if pode_editar %}
+      <br>Remover apaga também as variações, as fotos, os vínculos com os
+      anúncios e o histórico de estoque daquele produto. <b>O anúncio na
+      plataforma não é tocado</b> — sai só daqui.
+    {% endif %}
   </p>
 </div>
 {% elif busca %}
@@ -88,5 +118,54 @@
     {% endif %}
   </div>
 {% endif %}
+
+<script>
+  (function () {
+    var form = document.getElementById('form-produtos');
+    if (!form) return;
+    var todos = document.getElementById('marcar-todos-produtos');
+    var botao = document.getElementById('botao-remover');
+    var conta = document.getElementById('contagem-produtos');
+    var marcas = form.querySelectorAll('.marca-produto');
+    var PULA = String.fromCharCode(10);
+
+    function recontar() {
+      var sel = form.querySelectorAll('.marca-produto:checked');
+      botao.disabled = sel.length === 0;
+      conta.textContent = sel.length
+        ? sel.length + (sel.length === 1 ? ' selecionado' : ' selecionados')
+        : 'nenhum selecionado';
+      if (todos) {
+        todos.checked = sel.length === marcas.length && marcas.length > 0;
+        todos.indeterminate = sel.length > 0 && sel.length < marcas.length;
+      }
+    }
+
+    if (todos) {
+      todos.addEventListener('change', function () {
+        marcas.forEach(function (m) { m.checked = todos.checked; });
+        recontar();
+      });
+    }
+    marcas.forEach(function (m) { m.addEventListener('change', recontar); });
+
+    // apagar nao tem volta: a confirmacao diz quantos e nomeia um deles
+    form.addEventListener('submit', function (ev) {
+      var sel = form.querySelectorAll('.marca-produto:checked');
+      var n = sel.length;
+      if (!n) { ev.preventDefault(); return; }
+      var exemplo = sel[0].dataset.titulo || '';
+      var texto = n === 1
+        ? 'Remover "' + exemplo + '" do catálogo?'
+        : 'Remover ' + n + ' produtos do catálogo, começando por "' + exemplo + '"?';
+      texto += PULA + PULA
+             + 'Variações, fotos, vínculos e histórico de estoque vão junto. '
+             + 'Os anúncios nas plataformas NÃO são tocados. Isso não tem volta.';
+      if (!confirm(texto)) ev.preventDefault();
+    });
+
+    recontar();
+  })();
+</script>
 
 {% endblock %}

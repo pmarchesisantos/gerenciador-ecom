@@ -1527,6 +1527,185 @@ def tela_importar(c: TestClient) -> None:
            "/produtos/importar" in r.text)
 
 
+def estoque_por_id_de_variacao() -> None:
+    """Anuncio sem SKU: o pedido traz o codigo do ANUNCIO, igual para todas as
+    numeracoes. Quem diz qual par saiu e o id da variacao."""
+    print("estoque (anuncio sem SKU proprio):")
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    from app import db as db_real
+    from app.modelos import ItemPedido, Pedido
+    from app.servicos import estoque as se
+
+    comeco = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    banco = BancoFalso({
+        "produtos": [{"id": "p1", "sku": "MLB4827552571", "titulo": "Galocha",
+                      "estoque": 0, "estoque_minimo": 5, "controla_estoque": True}],
+        "produto_variacoes": [
+            # SKU inventado na importacao; quem vale e o id da plataforma
+            {"id": "v33", "produto_id": "p1", "sku": "MLB4827552571-PRETO-33",
+             "anuncio_variacao_id": "900033", "estoque": 4,
+             "eixo1_valor": "Preto", "eixo2_valor": "33", "ativa": True},
+            {"id": "v34", "produto_id": "p1", "sku": "MLB4827552571-PRETO-34",
+             "anuncio_variacao_id": "900034", "estoque": 7,
+             "eixo1_valor": "Preto", "eixo2_valor": "34", "ativa": True},
+        ],
+        "produto_anuncios": [],
+        "estoque_movimentos": [
+            {"id": "m0", "produto_id": "p1", "variacao_id": "v33",
+             "sku": "MLB4827552571-PRETO-33", "delta": 4, "motivo": "entrada",
+             "criado_em": comeco.isoformat()},
+        ],
+    })
+
+    originais = {n: getattr(db_real, n) for n in
+                 ("selecionar", "um", "inserir", "inserir_varios", "atualizar",
+                  "registrar_evento")}
+    for nome in originais:
+        setattr(db_real, nome, getattr(banco, nome))
+    try:
+        catalogo = asyncio.run(se.mapa_sku())
+        checar("o id da variacao vira chave do catalogo",
+               "900033" in catalogo and "900034" in catalogo)
+        checar("o SKU continua sendo chave",
+               "MLB4827552571-PRETO-33" in catalogo)
+
+        # precedencia: com os dois, o SKU manda
+        item = ItemPedido(sku="MLB4827552571-PRETO-34", titulo="x", quantidade=1,
+                          sku_variacao="900033")
+        checar("SKU manda sobre o id da variacao",
+               se.achar(catalogo, item)["sku"] == "MLB4827552571-PRETO-34")
+        # sem SKU util, cai no id
+        item2 = ItemPedido(sku="MLB4827552571", titulo="x", quantidade=1,
+                           sku_variacao="900033")
+        checar("sem SKU proprio, o id da variacao resolve",
+               se.achar(catalogo, item2)["sku"] == "MLB4827552571-PRETO-33")
+        item3 = ItemPedido(sku="NADA", titulo="x", quantidade=1)
+        checar("sem nenhum dos dois, nao casa", se.achar(catalogo, item3) is None)
+
+        # UM pedido com DUAS numeracoes do mesmo anuncio: ambas tem o mesmo
+        # "sku" cru. Se a chave do livro fosse o sku cru, uma sumiria.
+        depois = comeco + timedelta(days=1)
+        pedido = Pedido(
+            canal="mercadolivre", conta="loja", pedido_id="P1", criado_em=depois,
+            grupo=EFETIVADA, status_origem="", envio="enviado",
+            itens=[
+                ItemPedido(sku="MLB4827552571", titulo="33", quantidade=1,
+                           sku_variacao="900033"),
+                ItemPedido(sku="MLB4827552571", titulo="34", quantidade=2,
+                           sku_variacao="900034"),
+            ],
+        )
+        # o 34 tambem precisa ter inicio de controle
+        banco.t["estoque_movimentos"].append(
+            {"id": "m1", "produto_id": "p1", "variacao_id": "v34",
+             "sku": "MLB4827552571-PRETO-34", "delta": 7, "motivo": "entrada",
+             "criado_em": comeco.isoformat()})
+
+        r = asyncio.run(se.conciliar([pedido], {"id": "u1"}))
+        saldo = {v["sku"]: v["estoque"] for v in banco.t["produto_variacoes"]}
+        checar("as duas numeracoes do mesmo pedido descontam",
+               r["baixados"] == 2, str(r["baixados"]))
+        checar("33 saiu de 4 para 3",
+               saldo["MLB4827552571-PRETO-33"] == 3, str(saldo))
+        checar("34 saiu de 7 para 5",
+               saldo["MLB4827552571-PRETO-34"] == 5, str(saldo))
+        envios = [m for m in banco.t["estoque_movimentos"] if m["motivo"] == "envio"]
+        checar("o livro guarda o NOSSO sku, nao o codigo do anuncio",
+               sorted(m["sku"] for m in envios)
+               == ["MLB4827552571-PRETO-33", "MLB4827552571-PRETO-34"])
+
+        r2 = asyncio.run(se.conciliar([pedido], {"id": "u1"}))
+        checar("continua idempotente com o id da variacao",
+               r2["baixados"] == 0 and
+               {v["sku"]: v["estoque"] for v in banco.t["produto_variacoes"]} == saldo)
+    finally:
+        for nome, fn in originais.items():
+            setattr(db_real, nome, fn)
+
+
+def canais_id_de_variacao() -> None:
+    print("canais (id da variacao no pedido):")
+    from app.canais.mercadolivre import MercadoLivre
+
+    conta = {"apelido": "loja", "loja_id": "1"}
+    p = MercadoLivre()._traduzir(
+        {"id": 1, "status": "paid", "order_items": [
+            {"quantity": 1, "unit_price": 10,
+             "item": {"id": "MLB1", "title": "T", "variation_id": 900033}}]},
+        conta)
+    checar("ML traz o variation_id no item",
+           p.itens[0].sku_variacao == "900033", p.itens[0].sku_variacao)
+    checar("sem SKU, o sku do item cai no codigo do anuncio",
+           p.itens[0].sku == "MLB1")
+
+
+def exclusao_em_massa(c: TestClient) -> None:
+    print("exclusao em massa:")
+    import asyncio
+
+    from app.servicos import produtos as sp
+
+    logar(c, "leitor")
+    r = c.post("/produtos/remover-lote", data={"produto_id": "x"},
+               follow_redirects=False)
+    checar("leitor nao remove em lote",
+           r.status_code == 303 and "erro=" in r.headers.get("location", ""))
+    logar(c, "dono")
+
+    r = c.post("/produtos/remover-lote", data={}, follow_redirects=False)
+    checar("remover sem marcar nada e recusado",
+           "erro=" in r.headers.get("location", ""))
+
+    try:
+        # ids distintos: repetidos sao deduplicados de proposito e nao
+        # chegariam ao teto
+        muitos = ["id-%d" % i for i in range(sp.TETO_REMOCAO + 1)]
+        asyncio.run(sp.remover_varios(muitos, {"id": "u"}))
+        checar("teto de remocao respeitado", False, "nao levantou")
+    except sp.ErroProduto as e:
+        checar("teto de remocao respeitado", str(sp.TETO_REMOCAO) in str(e))
+
+    try:
+        asyncio.run(sp.remover_varios(["", None], {"id": "u"}))
+        checar("lista so com vazios e recusada", False, "nao levantou")
+    except sp.ErroProduto:
+        checar("lista so com vazios e recusada", True)
+
+
+def scripts_das_telas() -> None:
+    """Procura string de JS partida no meio por uma quebra de linha.
+
+    Existe porque isso aconteceu duas vezes: um "\n" escrito no gerador virou
+    quebra de verdade dentro de aspas, o <script> inteiro morreu com
+    SyntaxError e a pagina continuou abrindo normalmente - so que sem nenhum
+    comportamento. Erro silencioso e o pior tipo.
+    """
+    print("scripts das telas:")
+    import glob
+    import io as _io
+    import os
+    import re
+
+    suspeitas = []
+    for caminho in sorted(glob.glob("app/templates/*.html")):
+        texto = _io.open(caminho, encoding="utf-8").read()
+        for script in re.findall(r"<script>(.*?)</script>", texto, re.S):
+            for n, linha in enumerate(script.split(chr(10)), 1):
+                nua = linha.strip()
+                if nua.startswith("//") or "{{" in nua or "{%" in nua:
+                    continue
+                # aspas simples nao escapadas; impar = string aberta na linha
+                barra = chr(92)
+                padrao = '(?<!' + barra + barra + ')' + chr(39)
+                if len(re.findall(padrao, nua)) % 2:
+                    suspeitas.append("%s:%d %s" % (os.path.basename(caminho), n,
+                                                   nua[:60]))
+    checar("nenhuma string de JS partida por quebra de linha",
+           not suspeitas, "; ".join(suspeitas[:3]))
+
+
 def main() -> int:
     with TestClient(app) as c:
         portaria(c)
@@ -1547,6 +1726,10 @@ def main() -> int:
         ficha_do_produto(c)
         estoque_regras()
         estoque_baixa()
+        estoque_por_id_de_variacao()
+        canais_id_de_variacao()
+        exclusao_em_massa(c)
+        scripts_das_telas()
         tela_estoque(c)
         importacao_traducao()
         importacao_previa()

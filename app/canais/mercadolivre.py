@@ -551,6 +551,7 @@ class MercadoLivre(CanalBase):
                     titulo=info.get("title", "-"),
                     quantidade=int(it.get("quantity") or 0),
                     valor_unitario=dec(it.get("unit_price")),
+                    sku_variacao=str(info.get("variation_id") or ""),
                 )
             )
 

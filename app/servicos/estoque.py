@@ -292,11 +292,20 @@ async def anotar_ajuste(
 # baixa automática a partir dos pedidos que a consulta ao vivo trouxe
 # ---------------------------------------------------------------------------
 async def mapa_sku() -> dict[str, dict]:
-    """SKU como a plataforma manda -> a linha de estoque que ele consome.
+    """Chaves que um pedido pode trazer -> a linha de estoque que elas consomem.
 
-    O SKU da variação é o que mais aparece em pedido de quem vende numeração.
-    O código do anúncio e o SKU do vínculo só valem para produto sem grade:
-    com grade, eles não dizem qual par saiu, e chutar seria pior que não baixar.
+    Três famílias de chave, e a ordem importa na hora de procurar:
+
+    1. **O SKU da variação** — o código do lojista. É o que mais aparece em
+       pedido de quem vende numeração, e o único que une o mesmo tênis no
+       Mercado Livre, na Shopee e no TikTok. Manda sempre que existe.
+    2. **O id da variação na plataforma** — a rede de segurança para quem não
+       preencheu SKU no anúncio: nesse caso o pedido chega com o código do
+       anúncio, igual para todas as numerações. Vale só dentro da plataforma,
+       mas continua valendo mesmo que o SKU mude depois.
+    3. **O código do anúncio e o SKU do vínculo** — só para produto sem grade.
+       Com grade eles não dizem qual par saiu, e chutar seria pior que não
+       baixar.
     """
     produtos = {p["id"]: p for p in await db.selecionar("produtos")}
     if not produtos:
@@ -310,8 +319,10 @@ async def mapa_sku() -> dict[str, dict]:
     for produto in produtos.values():
         grade = grades.get(produto["id"]) or []
         for v in grade:
-            if v.get("sku"):
-                saida[str(v["sku"]).strip()] = _linha(produto, v)
+            linha = _linha(produto, v)
+            for chave in (v.get("sku"), v.get("anuncio_variacao_id")):
+                if chave:
+                    saida[str(chave).strip()] = linha
         if not grade and produto.get("sku"):
             saida[str(produto["sku"]).strip()] = _linha(produto, None)
 
@@ -323,6 +334,15 @@ async def mapa_sku() -> dict[str, dict]:
             if chave:
                 saida.setdefault(str(chave).strip(), _linha(produto, None))
     return saida
+
+
+def achar(catalogo: dict, item) -> dict | None:
+    """A linha de estoque de um item de pedido. SKU primeiro, id depois."""
+    for chave in (getattr(item, "sku", ""), getattr(item, "sku_variacao", "")):
+        linha = catalogo.get((chave or "").strip())
+        if linha:
+            return linha
+    return None
 
 
 async def projetar(pedidos: list, catalogo: dict | None = None) -> dict:
@@ -342,7 +362,7 @@ async def projetar(pedidos: list, catalogo: dict | None = None) -> dict:
     for pedido in pedidos:
         avisos = []
         for item in pedido.itens:
-            linha = catalogo.get((item.sku or "").strip())
+            linha = achar(catalogo, item)
             if not linha or not linha["controla"]:
                 continue
             resta = linha["estoque"] - int(item.quantidade or 0)
@@ -405,7 +425,7 @@ async def conciliar(
     for pedido in despachados:
         for item in pedido.itens:
             sku = (item.sku or "").strip()
-            linha = catalogo.get(sku)
+            linha = achar(catalogo, item)
             if not linha:
                 if sku and sku != "-" and sku not in vistos_sem_cadastro:
                     vistos_sem_cadastro.add(sku)
@@ -416,7 +436,11 @@ async def conciliar(
             if not linha["controla"]:
                 continue
 
-            chave = (pedido.canal, pedido.pedido_id, sku)
+            # A chave e o NOSSO SKU, nao o que veio no pedido. Sem SKU no
+            # anuncio, dois tamanhos do mesmo produto chegam com o mesmo
+            # codigo de anuncio: a chave crua colidiria e o indice unico
+            # descartaria uma das numeracoes em silencio.
+            chave = (pedido.canal, pedido.pedido_id, linha["sku"])
             if chave in ja_feitos:
                 continue
             # antes do primeiro movimento do produto, o saldo que a pessoa
@@ -440,7 +464,7 @@ async def conciliar(
                 {
                     "produto_id": linha["produto_id"],
                     "variacao_id": linha["variacao_id"],
-                    "sku": sku,
+                    "sku": linha["sku"],
                     "delta": -quantidade,
                     "saldo_depois": por_linha[destino]["saldo"],
                     "motivo": ENVIO,

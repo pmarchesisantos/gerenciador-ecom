@@ -956,3 +956,12 @@ td.num.negativo { color: var(--critical); font-weight: 600; }
 
 /* linha ja importada: visivel, mas claramente fora da acao */
 .linha-apagada { opacity: .5; }
+
+/* lista de produtos: mesma largura minima das outras grades, para o titulo
+   nao quebrar uma palavra por linha quando ha coluna de selecao */
+.grade-produtos { min-width: 1020px; }
+/* por classe, nao por posicao: a coluna de selecao desloca os indices */
+.grade-produtos td.col-titulo, .grade-produtos th.col-titulo { min-width: 360px; }
+.grade-produtos td.col-titulo a {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

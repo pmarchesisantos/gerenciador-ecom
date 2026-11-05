@@ -259,8 +259,12 @@ async def remover(produto_id: str, usuario: dict) -> None:
     produto = await buscar(produto_id)
     if not produto:
         return
-    # as fotos saem do Storage junto: a linha some por cascata, o arquivo não
+    # as fotos saem do Storage junto: a linha some por cascata, o arquivo não.
+    # Foto importada e so um endereco na plataforma - nao ha arquivo nosso
+    # para apagar, e tentar seria uma chamada perdida por foto.
     for foto in await fotos(produto_id):
+        if str(foto.get("caminho") or "").startswith("externo:"):
+            continue
         try:
             await armazenamento.apagar(foto["caminho"])
         except Exception:
@@ -269,6 +273,34 @@ async def remover(produto_id: str, usuario: dict) -> None:
     await db.registrar_evento(
         "produto", f"produto {produto.get('sku')} removido", usuario=usuario
     )
+
+
+TETO_REMOCAO = 500
+
+
+async def remover_varios(ids: list[str], usuario: dict) -> dict:
+    """Apaga vários produtos de uma vez.
+
+    Um produto que falha não derruba os outros: quem limpa um catálogo
+    importado quer o resto limpo mesmo que um caia, e precisa saber qual caiu.
+    """
+    alvos = [i for i in dict.fromkeys(ids) if i]
+    if not alvos:
+        raise ErroProduto("Marque ao menos um produto para remover.")
+    if len(alvos) > TETO_REMOCAO:
+        raise ErroProduto(
+            f"São {len(alvos)} produtos de uma vez. O limite é "
+            f"{TETO_REMOCAO} — use a busca para remover por partes."
+        )
+
+    apagados, problemas = 0, []
+    for produto_id in alvos:
+        try:
+            await remover(produto_id, usuario)
+            apagados += 1
+        except Exception as e:
+            problemas.append(str(e))
+    return {"apagados": apagados, "problemas": problemas}
 
 
 # ---------------------------------------------------------------------------

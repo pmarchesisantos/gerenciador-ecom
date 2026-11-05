@@ -308,6 +308,7 @@ class Shopee(CanalBase):
                     titulo=it.get("item_name", "-"),
                     quantidade=int(it.get("model_quantity_purchased") or 0),
                     valor_unitario=dec(it.get("model_discounted_price")),
+                    sku_variacao=str(it.get("model_id") or ""),
                 )
             )
 
